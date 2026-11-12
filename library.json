@@ -1,0 +1,20 @@
+{
+  "name": "m5-ui",
+  "version": "0.1.0",
+  "description": "UI components for M5Unified on 320x240 displays: scrollable settings panel, confirm, adjust and choose popups, event log.",
+  "authors": [
+    {
+      "name": "Yukiya Okuda"
+    }
+  ],
+  "frameworks": "arduino",
+  "platforms": "espressif32",
+  "dependencies": {
+    "m5stack/M5Unified": ">=0.2.29"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alumican/m5-ui.git"
+  }
+}

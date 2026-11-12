@@ -1,0 +1,8 @@
+.DS_Store
+.pio/
+.venv/
+__pycache__/
+*.pyc
+HANDOVER.md
+.env
+CLAUDE.local.md
