@@ -6,13 +6,14 @@ UI components for M5Unified on 320x240 displays (Core2, CoreS3). Tested with M5U
 - **confirm()**: OK / Cancel popup.
 - **adjust()**: 0-100 value popup with arrow buttons.
 - **choose()**: single-choice list popup.
+- **Progress**: non-blocking progress popup with an optional Cancel button.
 - **events**: log of the last 12 events, also printed to Serial.
 
 ## Install
 
 ```ini
 lib_deps =
-  https://github.com/alumican/m5-ui.git#v0.1.0
+  https://github.com/alumican/m5-ui.git#v0.2.0
 ```
 
 ## Panel
@@ -70,6 +71,20 @@ int i = m5ui::choose("Size", {"Small", "Medium", "Large"}, 0);
 ```
 
 Popups cover the whole screen and block until closed; redraw your screen afterwards. Touching outside closes them: `confirm()` returns false, `choose()` returns -1, `adjust()` returns the current value.
+
+`Progress` does not block. Call `update()` while working, even from a callback that blocks `loop()`; it polls touch itself and redraws only the bar and message when they change. Only the Cancel button reacts to touch.
+
+```cpp
+m5ui::Progress progress;
+
+progress.open("Update", "Cancel");  // nullptr instead of "Cancel" for no button
+bool ok = runUpdate([](int done, int total) {
+  return progress.update(done * 100 / total, "Writing");  // false once Cancel is tapped
+});
+progress.close();  // then redraw your screen
+```
+
+After Cancel is tapped, `update()` returns false and `cancelled()` is true; the popup stays until `close()`.
 
 ## events
 

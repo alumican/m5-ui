@@ -1,7 +1,7 @@
 {
   "name": "m5-ui",
-  "version": "0.1.0",
-  "description": "UI components for M5Unified on 320x240 displays: scrollable settings panel, confirm, adjust and choose popups, event log.",
+  "version": "0.2.0",
+  "description": "UI components for M5Unified on 320x240 displays: scrollable settings panel, confirm, adjust, choose and progress popups, event log.",
   "authors": [
     {
       "name": "Yukiya Okuda"

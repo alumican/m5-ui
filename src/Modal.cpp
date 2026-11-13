@@ -303,4 +303,136 @@ int adjust(const char* title, int value, void (*apply)(int), int step) {
   return value;
 }
 
+// ---- Progress ----
+
+namespace {
+constexpr int PX = 20, PW = 280, P_PAD = 16;
+constexpr int P_ROW_X = PX + P_PAD, P_ROW_W = PW - P_PAD * 2, P_ROW_H = 20;  // bar and message rows
+constexpr int P_BAR_Y = 40, P_BAR_W = P_ROW_W - 48, P_MSG_Y = 68;          // relative to the popup top
+constexpr int P_BTN_W = 120, P_BTN_H = 36, P_BTN_X = PX + (PW - P_BTN_W) / 2, P_BTN_Y = 98;
+}  // namespace
+
+static uint16_t subColor() { return theme.sub == theme.line ? 0xBDF7 : theme.sub; }
+
+void Progress::open(const char* title_, const char* cancel_) {
+  close();
+  title = title_ ? title_ : "";
+  cancel = cancel_ ? cancel_ : "";
+  message = "";
+  percent = 0;
+  drawnPercent = -1;
+  cancelledFlag = pressed = down = false;
+  messageDirty = true;
+  waitRelease = M5.Touch.getDetail().isPressed();  // ignore a touch already down
+  h = cancel.length() ? P_BTN_Y + P_BTN_H + 12 : P_MSG_Y + P_ROW_H + 12;
+  y0 = (240 - h) / 2;
+  row.setColorDepth(16);
+  row.createSprite(P_ROW_W, P_ROW_H);  // composes a row off screen; drawn directly if this fails
+  opened = true;
+
+  auto& d = M5.Display;
+  d.fillRect(0, 0, 320, 240, TFT_BLACK);  // hide what is behind
+  d.fillRoundRect(PX, y0, PW, h, 10, theme.bg);
+  d.drawRoundRect(PX, y0, PW, h, 10, theme.line);
+  d.setFont(&fonts::Font2);
+  d.setTextColor(theme.text);
+  d.setTextDatum(top_center);
+  d.drawString(title, PX + PW / 2, y0 + 12);
+  drawBar();
+  drawMessage();
+  drawCancel();
+}
+
+void Progress::close() {
+  if (row.getBuffer()) row.deleteSprite();
+  opened = false;
+}
+
+bool Progress::onCancel(int x, int y) const {
+  return cancel.length() && in(x, y, P_BTN_X, y0 + P_BTN_Y, P_BTN_W, P_BTN_H);
+}
+
+bool Progress::update(int percent_, const char* message_) {
+  if (!opened) return !cancelledFlag;
+  percent = constrain(percent_, 0, 100);
+  if (message_ && message != message_) {
+    message = message_;
+    messageDirty = true;
+  }
+  if (percent != drawnPercent) drawBar();
+  if (messageDirty) drawMessage();
+
+  // Touch, from the level rather than the edges, so an M5.update() elsewhere cannot hide a press.
+  M5.update();
+  auto t = M5.Touch.getDetail();
+  bool isDown = t.isPressed();
+  if (waitRelease) {
+    if (!isDown) waitRelease = false;
+  } else if (isDown && !down) {
+    touchX = t.x, touchY = t.y;
+    if (!cancelledFlag && onCancel(t.x, t.y)) {
+      pressed = true;
+      drawCancel();
+    }
+  } else if (isDown) {
+    touchX = t.x, touchY = t.y;
+  } else if (down && pressed) {
+    pressed = false;
+    if (onCancel(touchX, touchY)) cancelledFlag = true;
+    drawCancel();
+  }
+  if (!waitRelease) down = isDown;
+  return !cancelledFlag;
+}
+
+void Progress::drawBar() {
+  drawnPercent = percent;
+  LovyanGFX* g = &M5.Display;
+  int ox = P_ROW_X, oy = y0 + P_BAR_Y;
+  if (row.getBuffer()) g = &row, ox = oy = 0;
+  g->fillRect(ox, oy, P_ROW_W, P_ROW_H, theme.bg);
+  g->fillRoundRect(ox, oy, P_BAR_W, P_ROW_H, 4, theme.buttonOff);
+  int w = P_BAR_W * percent / 100;
+  if (w > 0) g->fillRoundRect(ox, oy, w, P_ROW_H, 4, theme.ok);
+  g->setFont(&fonts::Font2);
+  g->setTextColor(theme.text);
+  g->setTextDatum(middle_right);
+  g->drawString((String(percent) + "%").c_str(), ox + P_ROW_W, oy + P_ROW_H / 2);
+  if (g == &row) row.pushSprite(&M5.Display, P_ROW_X, y0 + P_BAR_Y);
+}
+
+void Progress::drawMessage() {
+  messageDirty = false;
+  LovyanGFX* g = &M5.Display;
+  int ox = P_ROW_X, oy = y0 + P_MSG_Y;
+  if (row.getBuffer()) g = &row, ox = oy = 0;
+  g->fillRect(ox, oy, P_ROW_W, P_ROW_H, theme.bg);
+  g->setFont(&fonts::Font2);
+  String s = message;
+  if (g->textWidth(s) > P_ROW_W) {  // cut to fit, with "..."
+    while (s.length() && g->textWidth(s + "...") > P_ROW_W) s.remove(s.length() - 1);
+    s += "...";
+  }
+  g->setTextColor(subColor());
+  g->setTextDatum(middle_left);
+  g->drawString(s, ox, oy + P_ROW_H / 2);
+  if (g == &row) row.pushSprite(&M5.Display, P_ROW_X, y0 + P_MSG_Y);
+}
+
+void Progress::drawCancel() {
+  if (!cancel.length()) return;
+  auto& d = M5.Display;
+  d.setFont(&fonts::Font2);
+  int y = y0 + P_BTN_Y;
+  if (cancelledFlag) {  // accepted: dimmed until close()
+    d.fillRoundRect(P_BTN_X, y, P_BTN_W, P_BTN_H, 8, theme.bg);
+    d.drawRoundRect(P_BTN_X, y, P_BTN_W, P_BTN_H, 8, theme.line);
+    d.setTextColor(subColor());
+    d.setTextDatum(middle_center);
+    d.drawString(cancel, P_BTN_X + P_BTN_W / 2, y + P_BTN_H / 2);
+  } else {
+    roundButton(P_BTN_X, y, P_BTN_W, P_BTN_H, cancel.c_str(), pressed, theme.buttonOff);
+  }
+}
+
 }  // namespace m5ui

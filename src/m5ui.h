@@ -85,6 +85,36 @@ int adjust(const char* title, int value, void (*apply)(int value), int step = 5)
 // current: selected index, or -1. Returns the chosen index, or -1 if cancelled.
 int choose(const char* title, const std::vector<String>& options, int current);
 
+// Progress popup with a title, a 0-100 bar and an optional Cancel button. Unlike the popups above it does not
+// block: open() it, call update() as work goes on (it polls touch itself, so it works while loop() is blocked),
+// then close() it and redraw your screen. Only Cancel reacts to touch.
+class Progress {
+ public:
+  // cancel: label of the Cancel button, or nullptr for none. Draws the popup at 0%.
+  void open(const char* title, const char* cancel = nullptr);
+  // percent: 0-100, clamped. message: line under the bar; nullptr keeps the previous one.
+  // Calls M5.update() and redraws only what changed. Returns false once Cancel has been tapped.
+  bool update(int percent, const char* message = nullptr);
+  // True once Cancel has been tapped. The popup stays until close(). Reset by open().
+  bool cancelled() const { return cancelledFlag; }
+  bool isOpen() const { return opened; }
+  // Frees the popup. Draws nothing; redraw your screen afterwards.
+  void close();
+
+ private:
+  M5Canvas row;
+  String title, cancel, message;
+  int y0 = 0, h = 0, percent = 0, drawnPercent = -1;
+  bool opened = false, cancelledFlag = false, messageDirty = false;
+  bool down = false, pressed = false, waitRelease = false;
+  int touchX = 0, touchY = 0;
+
+  void drawBar();
+  void drawMessage();
+  void drawCancel();
+  bool onCancel(int x, int y) const;
+};
+
 namespace events {
 const size_t KEEP = 12;
 // printf-style. Prefixes HH:MM:SS, or +Ns since boot if the clock is not set. Also prints to Serial.
