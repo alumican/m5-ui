@@ -81,26 +81,63 @@ String fit(LovyanGFX& g, const String& text, int w) {
   return s + "...";
 }
 
-Area reserved = {0, 0, 0, 0};
+Area reserved[RESERVED] = {};
+M5Canvas* badge = nullptr;
+Area badgeArea = {0, 0, 0, 0};
+Area damage = {0, 0, 0, 0};
+uint32_t damageSeq = 0;
 
-void push(M5Canvas& c, int x, int y) {
-  auto& d = M5.Display;
-  const Area& r = reserved;
-  int w = c.width(), h = c.height();
-  if (r.w <= 0 || r.x >= x + w || r.x + r.w <= x || r.y >= y + h || r.y + r.h <= y) {
-    c.pushSprite(&d, x, y);
-    return;
+static bool overlaps(const Area& a, const Area& b) {
+  return a.w > 0 && b.w > 0 && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
+
+bool damaged(uint32_t& seen, Area a) {
+  if (seen == damageSeq) return false;
+  seen = damageSeq;
+  return overlaps(damage, a);
+}
+
+void push(M5Canvas& c, int x, int y, int skip) { push(c, x, y, {x, y, c.width(), c.height()}, skip); }
+
+void push(M5Canvas& c, int x, int y, Area a, int skip) {
+  int x0 = std::max(a.x, x), y0 = std::max(a.y, y);
+  int x1 = std::min(a.x + a.w, x + c.width()), y1 = std::min(a.y + a.h, y + c.height());
+  if (x0 >= x1 || y0 >= y1) return;
+  if (badge && overlaps(badgeArea, {x0, y0, x1 - x0, y1 - y0}))
+    badge->pushSprite(&c, badgeArea.x - x, badgeArea.y - y, BADGE_KEY);
+  // Horizontal bands cut at the reserved edges; in each band, push the gaps between the reserved spans.
+  int cuts[2 + RESERVED * 2], n = 0;
+  cuts[n++] = y0;
+  cuts[n++] = y1;
+  for (int i = 0; i < RESERVED; i++) {
+    const Area& r = reserved[i];
+    if (i == skip || r.w <= 0 || r.h <= 0) continue;
+    if (r.y > y0 && r.y < y1) cuts[n++] = r.y;
+    if (r.y + r.h > y0 && r.y + r.h < y1) cuts[n++] = r.y + r.h;
   }
-  // The bands above, below, left and right of the square; the display clips each push.
-  int top = std::max(y, r.y), bottom = std::min(y + h, r.y + r.h);
-  const Area parts[4] = {{x, y, w, r.y - y},
-                         {x, r.y + r.h, w, y + h - r.y - r.h},
-                         {x, top, r.x - x, bottom - top},
-                         {r.x + r.w, top, x + w - r.x - r.w, bottom - top}};
-  for (const Area& p : parts) {
-    if (p.w <= 0 || p.h <= 0) continue;
-    d.setClipRect(p.x, p.y, p.w, p.h);
-    c.pushSprite(&d, x, y);
+  std::sort(cuts, cuts + n);
+  auto& d = M5.Display;
+  for (int k = 0; k + 1 < n; k++) {
+    int ya = cuts[k], yb = cuts[k + 1];
+    if (ya >= yb) continue;
+    int spans[RESERVED + 1][2], m = 0;  // one spare keeps the compiler sure of the bounds
+    for (int i = 0; i < RESERVED; i++) {
+      const Area& r = reserved[i];
+      if (i == skip || r.w <= 0 || r.h <= 0 || r.y > ya || r.y + r.h < yb) continue;
+      int s0 = std::max(r.x, x0), s1 = std::min(r.x + r.w, x1);
+      if (s0 < s1) spans[m][0] = s0, spans[m][1] = s1, m++;
+    }
+    for (int j = 1; j < m; j++)  // by start
+      for (int q = j; q > 0 && spans[q][0] < spans[q - 1][0]; q--) std::swap(spans[q], spans[q - 1]);
+    int gx = x0;
+    for (int j = 0; j <= m; j++) {
+      int end = j < m ? spans[j][0] : x1;
+      if (end > gx) {
+        d.setClipRect(gx, ya, end - gx, yb - ya);
+        c.pushSprite(&d, x, y);
+      }
+      if (j < m) gx = std::max(gx, spans[j][1]);
+    }
   }
   d.clearClipRect();
 }

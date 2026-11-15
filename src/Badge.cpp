@@ -4,7 +4,7 @@
 
 namespace m5ui {
 
-static const uint16_t KEY = 0x0821;  // transparent: the corners outside the rounded square
+static const uint16_t KEY = detail::BADGE_KEY;  // transparent: the corners outside the rounded square
 
 // ---- Icons ----
 
@@ -55,9 +55,10 @@ void Badge::set(const Icon& i) {
 void Badge::hide() {
   if (!icon) return;
   icon = nullptr;
-  detail::reserved = {0, 0, 0, 0};
-  const Metrics& m = metrics;
-  M5.Display.fillRect(m.badgeX, m.badgeY, m.badgeSize, m.badgeSize, theme.screen);
+  detail::badge = nullptr;
+  // InfoView and Face under it redraw the square at their next update().
+  detail::damage = detail::badgeArea;
+  detail::damageSeq++;
 }
 
 void Badge::show() {
@@ -76,7 +77,6 @@ void Badge::draw() {
   const Metrics& m = metrics;
   int s = m.badgeSize;
   if (s <= 0) return;
-  detail::reserved = {m.badgeX, m.badgeY, s, s};
   if (canvas.width() != s || !canvas.getBuffer()) {  // small: internal RAM
     if (canvas.getBuffer()) canvas.deleteSprite();
     canvas.setColorDepth(16);
@@ -86,6 +86,8 @@ void Badge::draw() {
   canvas.fillScreen(KEY);
   canvas.fillRoundRect(0, 0, s, s, s / 5, theme.badgeBg);
   icon->draw(canvas, s, phase);
+  detail::badge = &canvas;
+  detail::badgeArea = {m.badgeX, m.badgeY, s, s};
   canvas.pushSprite(&M5.Display, m.badgeX, m.badgeY, KEY);
 }
 

@@ -52,6 +52,8 @@ void InfoView::show() {
 
 void InfoView::update() {
   if (!opened) return;
+  if (detail::damaged(damageSeen, {bodyX, headY, body.width(), bodyY + body.height() - headY}))
+    headDirty = bodyDirty = true;
   bool moved = content && content->animate(millis());
   if (headDirty) drawHead();
   if (bodyDirty || moved || (content && content->dirty)) drawBody();
@@ -319,7 +321,9 @@ void Subtitle::draw(int off) {
       canvas.clearClipRect();
     }
   }
-  detail::push(canvas, 0, metrics.subtitleY);
+  // While it shows text, the band is kept clear of InfoView and Face.
+  detail::reserved[detail::RESERVED_SUBTITLE] = {0, metrics.subtitleY, txt.length() ? w : 0, h};
+  detail::push(canvas, 0, metrics.subtitleY, detail::RESERVED_SUBTITLE);
 }
 
 }  // namespace m5ui

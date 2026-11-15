@@ -10,6 +10,8 @@ UI components for M5Unified on 320x240 displays (Core2, CoreS3). Tested with M5U
 - **events**: log of the last 12 events, also printed to Serial.
 - **InfoView**: one piece of information at a time, beside a small face the app draws in the top-left corner. Contents: **PinHeader**, **Terminal**, **Typing**, **StatusList**, or your own.
 - **Subtitle**: one line at the bottom of the screen, over the face or an InfoView.
+- **Face**: eyes and a mouth drawn in any rect (full screen, or the InfoView corner): expressions, blinking, gaze, breathing, lip sync, colors.
+- **Tween**: easing curves, color mixing and a small time-based tween, e.g. to fade the face background.
 - **Badge**: one small icon in a fixed square, top right by default, over the face or an InfoView. Icons: `mic`, `micOff`, or your own.
 - **Tokens**: colors, sizes, fonts and timings in `m5ui::theme`, `m5ui::metrics` and `m5ui::timing`.
 
@@ -19,7 +21,7 @@ UI components for M5Unified on 320x240 displays (Core2, CoreS3). Tested with M5U
 
 ```ini
 lib_deps =
-  https://github.com/alumican/m5-ui.git#v0.4.0
+  https://github.com/alumican/m5-ui.git#v0.5.0
 ```
 
 ## Panel
@@ -147,6 +149,89 @@ Contents:
 
 The default fonts are ASCII only. For Japanese, set a font that has it, e.g. `m5ui::metrics.font = &fonts::efontJA_16;`. Text wraps at spaces, or between characters where there are none.
 
+## Face
+
+```cpp
+m5ui::Face face;
+
+void setup() {
+  M5.begin();
+  face.begin(0, 0, 320, 240);  // or the InfoView corner: metrics.infoX, infoY, cornerW, cornerH
+}
+
+void loop() {
+  face.setEyes(m5ui::Eyes::Smile);
+  face.setMouth(voiceLevel);   // 0..1, every frame while speaking
+  face.update();               // at most every timing.faceFrameMs, only when something changed
+}
+```
+
+- Draws only inside its rect, background included, in a PSRAM sprite; only the part around the eyes and mouth is pushed unless the background changed. A Subtitle that shows text keeps its band; a visible Badge is drawn into the face, so neither flickers.
+- Eyes: `Normal`, `Smile`, `Line`, `Cross`, `Sad`, `Angry`, `Surprised`, `Thinking`, `Sleepy`.
+- By itself: blinks (`timing.blink*`, `setAutoBlink()`), looks around (`timing.gaze*`; `setGaze(x, y)` takes over, `setAutoGaze(true)` gives it back), breathes (`timing.breathMs`, `setBreath()`).
+- Colors: `setColor()`, `setBackground()`; from the next frame. Defaults: `theme.face`, `theme.faceBg`.
+- `onDraw(fn, x, y, w, h)`: `fn(g, w, h)` draws over the face in the sprite before the push, e.g. text that must not flicker. Call `invalidate()` when it changes; `(x, y, w, h)` is the part it draws in (w 0: the whole rect).
+- `show()` draws the whole rect again, e.g. after a popup.
+- Two faces (full and corner) are two `Face` objects, or one `Face` moved with `begin()` again.
+
+### Layout
+
+`FaceLayout` places the parts in a `width` x `height` face, scaled to the rect (aspect kept, centered). `metrics.faceMinEye` and `faceMinLine` keep small faces readable; `FaceLayout::compact()` has bigger parts for the 96 x 72 corner.
+
+```cpp
+m5ui::FaceLayout l;          // the defaults, spelled out
+l.width = 320, l.height = 240;
+l.eyeR = 8;
+l.leftEyeX = 90, l.leftEyeY = 93, l.rightEyeX = 230, l.rightEyeY = 96;
+l.mouthX = 163, l.mouthY = 148;
+l.mouthMinW = 50, l.mouthMaxW = 90, l.mouthMinH = 4, l.mouthMaxH = 60;  // closed: 90 x 4, open: 50 x 60
+l.browW = 32, l.browH = 0;   // browH > 0 draws eyebrows
+l.leftBrowX = 96, l.leftBrowY = 67, l.rightBrowX = 230, l.rightBrowY = 72;
+l.gaze = 3, l.breath = 3;
+face.setLayout(l);
+```
+
+### Coming from M5Stack-Avatar
+
+| M5Stack-Avatar | m5-ui |
+| --- | --- |
+| `avatar.init()`, `avatar.start()` (drawing task) | `face.begin(x, y, w, h)`, then `face.update()` from `loop()` |
+| `avatar.draw()` | `face.update()` (or `face.show()` to force) |
+| `Face(...)` with `BoundingRect` positions | `FaceLayout` (numbers above match the default `Face`) |
+| `setExpression(Neutral / Happy / Sleepy / Doubt / Sad / Angry)` | `setEyes(Normal / Smile / Sleepy / Thinking / Sad / Angry)` |
+| custom eye drawables (line, cross) | `Eyes::Line`, `Eyes::Cross` |
+| `setMouthOpenRatio(r)` | `setMouth(r)` |
+| `setEyeOpenRatio()` for blinking | automatic; `setAutoBlink(false)` to stop |
+| `setGaze(v, h)` | `setGaze(x, y)`; automatic otherwise |
+| `setBreath()` | automatic; `setBreath(false)` to stop |
+| `ColorPalette` primary / background | `setColor()`, `setBackground()` |
+| background fade done by hand | `Tween` and `mix565()` every frame |
+| `setScale()` / `setPosition()` for a small face | a second `Face` in the corner rect, or `begin()` again |
+| drawing over the face (e.g. a corner text) | `onDraw()` + `invalidate()` |
+| speech balloon | `Subtitle` |
+
+## Tween
+
+```cpp
+m5ui::Tween fade;
+uint16_t from = TFT_BLACK, to = TFT_BLACK;
+
+void setMood(uint16_t color) {
+  from = m5ui::mix565(from, to, fade.value());  // from where it is now
+  to = color;
+  fade.start(1000, m5ui::ease::inOut);
+}
+
+void loop() {
+  face.setBackground(m5ui::mix565(from, to, fade.value()));
+  face.update();
+}
+```
+
+- `Tween::start(ms, curve)`; `value()` is the eased 0..1 (1 when done or never started); `running()`.
+- Curves in `m5ui::ease`: `linear`, `inOut` (smoothstep), `inQuad`, `outQuad`, `inOutQuad`, `inCubic`, `outCubic`, `inOutCubic`; or your own `float (*)(float)`.
+- `mix565(a, b, t)`, `mix888(a, b, t)` (0xRRGGBB) and `mix(a, b, t)` for numbers.
+
 ## Badge
 
 ```cpp
@@ -155,15 +240,15 @@ m5ui::Badge badge;
 badge.set(listening ? m5ui::icons::mic : m5ui::icons::micOff);  // draws only when it changes
 
 void loop() {
-  drawFace();      // if the face draws over the badge every frame,
-  badge.show();    // push it again: a small sprite, cheap
+  face.update();   // m5ui::Face keeps the badge on top by itself
   badge.update();  // blinks the red dot of icons::mic
+  // if you draw over the badge yourself, call badge.show() afterwards: a small sprite, cheap
 }
 ```
 
 - The square is `metrics.badgeX`, `badgeY`, `badgeSize` (default 28 x 28 at the top right). It clears the InfoView title, the content and the subtitle.
-- While visible, InfoView and Subtitle draw around the square, so they do not wipe it. Popups and Panel cover it; call `show()` after them.
-- `hide()` clears the square to `theme.screen`.
+- While visible, InfoView, Face and Subtitle draw it into what they push, so it stays on top without flicker. Popups, Panel and your own drawing cover it; call `show()` after them.
+- `hide()`: InfoView and Face under the square redraw it at their next `update()`.
 - Colors: `theme.badgeBg`, `iconOn`, `iconOff`, `iconAlert`. Blink: `timing.badgeBlinkMs` (0 keeps the dot on).
 - Your own icon: a draw function and whether it blinks.
 

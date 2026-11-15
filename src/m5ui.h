@@ -24,6 +24,8 @@ struct Theme {
   // Badge and icons
   uint16_t badgeBg = 0x18E3;
   uint16_t iconOn = TFT_WHITE, iconOff = 0x6B4D, iconAlert = 0xF206;
+  // Face: lines and the starting background
+  uint16_t face = TFT_WHITE, faceBg = TFT_BLACK;
   // PinHeader kinds
   uint16_t pinNone = 0x3186, pinPower = 0xF206, pinGround = 0x8410, pinGpio = 0x2EA6;
   uint16_t pinI2c = 0x4D7F, pinSpi = 0xA21E, pinUart = 0xFD20, pinOther = 0xF418;
@@ -50,6 +52,7 @@ struct Metrics {
   int16_t pinPitch = 22, overviewPitch = 7;  // PinHeader: pin spacing, and in the small whole-header map
   int16_t dragPx = 8;   // drag distance that starts scrolling in Panel and choose()
   int16_t badgeX = 288, badgeY = 4, badgeSize = 28;  // Badge square, top right by default
+  int16_t faceMinEye = 4, faceMinLine = 2;  // Face: minimums in screen pixels, so small faces stay readable
 };
 extern Metrics metrics;
 
@@ -60,6 +63,11 @@ struct Timing {
   uint16_t subtitleSpeed = 60;     // px per second for a subtitle wider than the screen; 0 cuts it with "..."
   uint16_t subtitleHoldMs = 1500;  // pause at both ends of a subtitle scroll
   uint16_t repeatAfterMs = 400, repeatEveryMs = 120;  // adjust() hold-to-repeat
+  uint16_t faceFrameMs = 33;                         // Face: at most one frame per this
+  uint16_t blinkEveryMs = 2500, blinkRandomMs = 2000;  // Face: time between blinks, plus up to the random part
+  uint16_t blinkClosedMs = 150;
+  uint16_t gazeEveryMs = 1500, gazeRandomMs = 2500;    // Face: time between looks when looking around
+  uint16_t breathMs = 3300;                           // Face: one breath, up and down
   uint16_t badgeBlinkMs = 600;     // blinking part of an icon (e.g. the dot of icons::mic), each phase; 0 keeps it on
 };
 extern Timing timing;
@@ -215,6 +223,7 @@ class InfoView {
   String title;
   Content* content = nullptr;
   bool opened = false, headDirty = true, bodyDirty = true;
+  uint32_t damageSeen = 0;
   int headX = 0, headY = 0, bodyX = 0, bodyY = 0;
   void drawHead();
   void drawBody();
@@ -343,8 +352,126 @@ class Subtitle {
   void draw(int offset);
 };
 
+// ---- Animation ----
+// Easing curves map 0..1 to 0..1. Tween turns time into an eased 0..1; mix() blends colors with it.
+
+using Ease = float (*)(float t);
+namespace ease {
+float linear(float t);
+float inOut(float t);  // smoothstep
+float inQuad(float t);
+float outQuad(float t);
+float inOutQuad(float t);
+float inCubic(float t);
+float outCubic(float t);
+float inOutCubic(float t);
+}  // namespace ease
+
+// Colors from a to b at t (0..1).
+uint16_t mix565(uint16_t a, uint16_t b, float t);
+uint32_t mix888(uint32_t a, uint32_t b, float t);  // 0xRRGGBB
+inline float mix(float a, float b, float t) { return a + (b - a) * t; }
+
+class Tween {
+ public:
+  // Starts from 0 at now, reaching 1 after ms.
+  void start(uint32_t ms, Ease curve = ease::inOut) { start(ms, curve, millis()); }
+  void start(uint32_t ms, Ease curve, uint32_t now);
+  // Eased 0..1 at now. 1 once finished, and before any start().
+  float value() const { return value(millis()); }
+  float value(uint32_t now) const;
+  bool running() const { return running(millis()); }
+  bool running(uint32_t now) const { return ms && now - startedAt < ms; }
+
+ private:
+  uint32_t startedAt = 0, ms = 0;
+  Ease curve = nullptr;
+};
+
+// ---- Face ----
+// Eyes and a mouth, drawn from loop() in a PSRAM sprite inside a rect on screen: the whole screen, or the corner an
+// InfoView leaves (metrics.infoX, infoY, cornerW, cornerH). It never draws outside the rect, nor over a visible
+// Badge or a Subtitle that shows text. Blinks, looks around and breathes by itself; the app sets the eyes, the
+// mouth opening (every frame while speaking), the gaze and the colors. Only the parts that moved are pushed.
+
+enum class Eyes : uint8_t { Normal, Smile, Line, Cross, Sad, Angry, Surprised, Thinking, Sleepy };
+
+// Where the parts go, in pixels of a width x height face; scaled to the rect the Face gets (keeping the aspect,
+// centered). Left and right are as seen on screen. The defaults are the common stack-chan face.
+struct FaceLayout {
+  int16_t width = 320, height = 240;
+  int16_t eyeR = 8;
+  int16_t leftEyeX = 90, leftEyeY = 93, rightEyeX = 230, rightEyeY = 96;
+  // Mouth: a bar, maxW x minH when closed and minW x maxH when fully open.
+  int16_t mouthX = 163, mouthY = 148, mouthMinW = 50, mouthMaxW = 90, mouthMinH = 4, mouthMaxH = 60;
+  // Eyebrows: a browW x browH bar each, slanted for Sad and Angry. browH 0: none.
+  int16_t browW = 32, browH = 0;
+  int16_t leftBrowX = 96, leftBrowY = 67, rightBrowX = 230, rightBrowY = 72;
+  int16_t gaze = 3, breath = 3;  // how far the eyes look and the face moves when breathing
+
+  // Bigger parts for a small face, e.g. the InfoView corner (96 x 72).
+  static FaceLayout compact() {
+    FaceLayout l;
+    l.width = 160, l.height = 120, l.eyeR = 10;
+    l.leftEyeX = 48, l.leftEyeY = 50, l.rightEyeX = 112, l.rightEyeY = 51;
+    l.mouthX = 81, l.mouthY = 88, l.mouthMinW = 26, l.mouthMaxW = 44, l.mouthMinH = 4, l.mouthMaxH = 30;
+    l.leftBrowX = 50, l.leftBrowY = 30, l.rightBrowX = 112, l.rightBrowY = 32, l.browW = 18;
+    l.gaze = 3, l.breath = 2;
+    return l;
+  }
+};
+
+class Face {
+ public:
+  // Draws after the face and before the push, in the sprite (w x h, the Face's rect). E.g. text that must not
+  // flicker over the face.
+  using Overlay = void (*)(LovyanGFX& g, int w, int h);
+
+  // Places the face and allocates a w x h sprite. Call again to move or resize it (the rest is kept). False if
+  // out of memory.
+  bool begin(int x, int y, int w, int h);
+  void setLayout(const FaceLayout& layout);
+  void setEyes(Eyes eyes);
+  Eyes eyes() const { return style; }
+  // 0 closed to 1 open, e.g. from the voice level every frame.
+  void setMouth(float open);
+  // -1 (left, up) to 1 (right, down). Stops looking around.
+  void setGaze(float x, float y);
+  // Looks around by itself (on by default).
+  void setAutoGaze(bool on);
+  void setAutoBlink(bool on);
+  void setBreath(bool on);
+  // Colors take effect from the next frame. To fade, pass a new color every frame (see Tween).
+  void setColor(uint16_t color);
+  void setBackground(uint16_t color);
+  // overlay is called every frame. When what it draws changes, call invalidate(). (x, y, w, h): the part of the
+  // rect it draws in, pushed on invalidate(); w 0 for the whole rect.
+  void onDraw(Overlay overlay, int x = 0, int y = 0, int w = 0, int h = 0);
+  // Draws again at the next update(), the overlay area included.
+  void invalidate();
+  // Call from loop(). Draws at most every timing.faceFrameMs, and only when something changed.
+  void update();
+  // Draws and pushes the whole rect now, e.g. after something else drew over it.
+  void show();
+
+ private:
+  M5Canvas canvas;
+  FaceLayout lay;
+  Overlay overlay = nullptr;
+  int fx = 0, fy = 0, ox = 0, oy = 0, ow = 0, oh = 0;
+  Eyes style = Eyes::Normal;
+  float mouth = 0, gx = 0, gy = 0, tx = 0, ty = 0;
+  bool autoGaze = true, autoBlink = true, breath = true, colored = false, full = true, dirty = false;
+  uint16_t fg = 0, bg = 0, drawnBg = 0;
+  uint32_t nextBlink = 0, blinkUntil = 0, nextGaze = 0, lastAt = 0, drawnAt = 0;
+  uint32_t drawnKey = 0, seed = 0x9E3779B9u, damageSeen = 0;
+  int box[4] = {0, 0, 0, 0};  // area drawn last time: x, y, w, h in the sprite
+  uint32_t rnd(uint32_t n);
+};
+
 // A small icon in a fixed square on screen (metrics.badge*), over the face or an InfoView.
-// While a Badge is visible, InfoView and Subtitle draw around its square. One Badge at a time.
+// While a Badge is visible, InfoView, Face and Subtitle draw it into what they push, so it stays on top without
+// flicker. One Badge at a time.
 
 // Draws an icon in a size x size square from (0, 0), over theme.badgeBg. on alternates every timing.badgeBlinkMs
 // when blinks is true, and is always true otherwise. Define your own Icon to add icons.
@@ -362,10 +489,10 @@ class Badge {
  public:
   // Shows icon. Draws only if it changed or was hidden.
   void set(const Icon& icon);
-  // Clears the square to theme.screen and lets InfoView and Subtitle draw there again.
+  // InfoView and Face under the square redraw it at their next update(); anything else, redraw yourself.
   void hide();
   bool visible() const { return icon != nullptr; }
-  // Draws again if visible, e.g. after the face drew over it. Pushes a small sprite, cheap to call every frame.
+  // Draws again if visible, e.g. after the app drew over it. Pushes a small sprite, cheap to call every frame.
   void show();
   // Call from loop(). Redraws a blinking icon when its phase changes.
   void update();

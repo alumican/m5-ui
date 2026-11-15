@@ -1,5 +1,6 @@
-// m5-ui showcase: every info component, one at a time, beside a small face in the top-left corner.
-// Tap the screen for the next one. The face here is two circles; a real app draws its own.
+// m5-ui showcase: a full-screen face, then every info component beside the same face, small, in the top-left
+// corner. Tap the screen for the next one. The face changes its eyes, talks (a made-up voice level) and fades
+// its background with a Tween.
 
 #include <M5Unified.h>
 
@@ -8,6 +9,9 @@
 m5ui::InfoView info;
 m5ui::Subtitle subtitle;
 m5ui::Badge badge;  // top right: mic on / off, toggled every 3 seconds
+m5ui::Face bigFace, smallFace;
+m5ui::Tween fade;
+uint16_t bgFrom = TFT_BLACK, bgTo = TFT_BLACK;
 m5ui::PinHeader header40, header8;
 m5ui::Terminal terminal;
 m5ui::Typing typing;
@@ -18,14 +22,13 @@ int screen = SHOW_FACE;
 uint32_t lastStep = 0;
 int tick = 0;
 
-// Eyes centered in w x h at (x, y).
-void drawFace(int x, int y, int w, int h) {
-  auto& d = M5.Display;
-  d.fillRect(x, y, w, h, TFT_BLACK);
-  int r = std::max(3, h / 10);
-  d.fillCircle(x + w * 3 / 10, y + h * 2 / 5, r, TFT_WHITE);
-  d.fillCircle(x + w * 7 / 10, y + h * 2 / 5, r, TFT_WHITE);
-  badge.show();  // the face drew over it
+m5ui::Face& face() { return screen == SHOW_FACE ? bigFace : smallFace; }
+
+// A made-up voice level: bursts of syllables with pauses between sentences.
+float voiceLevel(uint32_t now) {
+  if (now % 6000 > 3500) return 0;
+  float syllable = fabsf(sinf(now * 0.018f)), wobble = 0.6f + 0.4f * sinf(now * 0.0071f);
+  return syllable * wobble;
 }
 
 void setupPins() {
@@ -71,12 +74,11 @@ void show(int s) {
   m5ui::metrics.subtitleAlign = s == SHOW_TERMINAL ? m5ui::Align::Left : m5ui::Align::Center;
   if (s == SHOW_FACE) {
     info.close();
-    drawFace(0, 0, 320, 216);
+    bigFace.show();
     subtitle.set("Tap for the next screen.");
     return;
   }
-  M5.Display.fillRect(0, 0, 320, 216, TFT_BLACK);
-  drawFace(0, 0, m5ui::metrics.cornerW, m5ui::metrics.cornerH);
+  smallFace.show();
   switch (s) {
     case SHOW_PINS40:
       info.open("40-pin header", &header40);
@@ -109,6 +111,20 @@ static const char* CODE =
 
 void step() {
   tick++;
+  // Every 2.5 s the next eyes; every 6 s the background fades to the next color.
+  static const m5ui::Eyes eyes[] = {m5ui::Eyes::Normal, m5ui::Eyes::Smile,     m5ui::Eyes::Line,
+                                    m5ui::Eyes::Cross,  m5ui::Eyes::Sad,       m5ui::Eyes::Angry,
+                                    m5ui::Eyes::Surprised, m5ui::Eyes::Thinking, m5ui::Eyes::Sleepy};
+  static const uint16_t backgrounds[] = {TFT_BLACK, 0x0010, TFT_BLACK, 0x6000};
+  if (tick % 25 == 0) {
+    bigFace.setEyes(eyes[tick / 25 % 9]);
+    smallFace.setEyes(eyes[tick / 25 % 9]);
+  }
+  if (tick % 60 == 0) {
+    bgFrom = bgTo;
+    bgTo = backgrounds[tick / 60 % 4];
+    fade.start(1000, m5ui::ease::inOut);
+  }
   static int micTick = 0;
   if (++micTick % 30 == 0) badge.set(micTick / 30 % 2 ? m5ui::icons::micOff : m5ui::icons::mic);
   switch (screen) {
@@ -145,6 +161,9 @@ void setup() {
   M5.Display.setRotation(1);
   M5.Display.fillScreen(TFT_BLACK);
   setupPins();
+  bigFace.begin(0, 0, 320, 240);  // the subtitle band and the badge stay on top
+  smallFace.begin(m5ui::metrics.infoX, m5ui::metrics.infoY, m5ui::metrics.cornerW, m5ui::metrics.cornerH);
+  smallFace.setLayout(m5ui::FaceLayout::compact());
   badge.set(m5ui::icons::mic);
   if (!info.begin()) Serial.println("m5-ui: out of memory");
   show(SHOW_FACE);
@@ -157,6 +176,10 @@ void loop() {
     lastStep = millis();
     step();
   }
+  uint32_t now = millis();
+  face().setMouth(voiceLevel(now));
+  face().setBackground(m5ui::mix565(bgFrom, bgTo, fade.value(now)));
+  face().update();
   info.update();
   subtitle.update();
   badge.update();

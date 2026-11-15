@@ -16,13 +16,25 @@ void wrap(LovyanGFX& g, const String& text, int w, std::vector<String>& out);
 String fit(LovyanGFX& g, const String& text, int w);
 // Bytes in the UTF-8 character that starts with c.
 int charLen(uint8_t c);
-// Square kept clear by a visible Badge; w 0 when none.
 struct Area {
   int x, y, w, h;
 };
-extern Area reserved;
-// Pushes c to the display at (x, y), leaving out the reserved square.
-void push(M5Canvas& c, int x, int y);
+// Areas kept clear while shown: a Subtitle's band. w 0 when not shown.
+enum { RESERVED_SUBTITLE, RESERVED };
+extern Area reserved[RESERVED];
+// A visible Badge: drawn into every sprite pushed over it, so it neither flickers nor gets wiped.
+extern M5Canvas* badge;
+extern Area badgeArea;
+const uint16_t BADGE_KEY = 0x0821;  // transparent color of the Badge sprite
+// Areas left stale (a Badge hidden); components over them redraw. seq counts the changes.
+extern Area damage;
+extern uint32_t damageSeq;
+// True once if damage changed since seen and touches a.
+bool damaged(uint32_t& seen, Area a);
+// Pushes c (placed at x, y) to the display, only inside a, leaving out the reserved areas except skip, with a
+// visible Badge drawn in. Resets the display clip rect.
+void push(M5Canvas& c, int x, int y, Area a, int skip = -1);
+void push(M5Canvas& c, int x, int y, int skip = -1);
 // Allocates a 16-bit sprite, in PSRAM if there is any. False if out of memory.
 bool makeSprite(M5Canvas& c, int w, int h);
 

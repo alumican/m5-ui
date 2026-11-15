@@ -20,17 +20,14 @@ In order.
 
 ## 4. Face
 
-- [ ] Decide between depending on M5Stack-Avatar (pinning its version) and drawing our own.
-- [ ] Requirements: switchable eye shapes (normal, smile, cross), background color fade, drawn from `loop()` without a separate task.
-
-Then:
-
-- [ ] Shrink the face to small eyes in a corner. (InfoView leaves the corner free; the app draws the face there for now.)
-- [x] One-line subtitle: `Subtitle`.
-- [x] Info panel container, one at a time: `InfoView`, with `PinHeader`, `Terminal`, `Typing` and `StatusList` contents.
-- [ ] Lip sync: move the mouth by an audio level the app passes in.
+- [x] Own drawing (no M5Stack-Avatar), from `loop()`: `Face`, `FaceLayout`, `Eyes`.
+- [x] Eye shapes, blinking, gaze, breathing, lip sync from a level the app passes.
+- [x] Small face in the InfoView corner; one-line subtitle; info panel container.
+- [x] Background color set by the app every frame; `Tween` for fades.
+- [ ] More mouth shapes (smile, o), if wanted.
 
 ## Out of scope
 
 - App logic, text, speech and conversation, panel content, network services.
 - Hardware control (servos, LEDs, touch sensors), including head motion for lip sync. These belong in a separate library.
+- Audio analysis. The app turns the voice into a 0..1 level for `Face::setMouth()`.
