@@ -4,13 +4,10 @@
 
 namespace m5ui {
 
-Theme theme;
-
 static constexpr int W = 320, H = 240;
 static constexpr int CLOSE_X = 276, CLOSE_Y = 4, CLOSE_S = 40;  // close button, screen coordinates
 static constexpr int STATUS_X2 = 132;                          // second status column
 static constexpr int BTN_H = 36, GAP = 8, ROW_GAP = 6;
-static constexpr int DRAG_PX = 8;  // drag distance that starts scrolling
 
 void Panel::begin(Build b, int contentHeight) {
   build = b;
@@ -279,7 +276,7 @@ int Panel::touch(const m5::touch_detail_t& t) {
     }
   } else if (t.isPressed() && pressed != CLOSED) {
     int dy = t.y - startY;
-    if (!dragging && abs(dy) >= DRAG_PX) {
+    if (!dragging && abs(dy) >= metrics.dragPx) {
       dragging = true;
       if (pressed != NONE) {
         pressed = NONE;

@@ -87,7 +87,6 @@ namespace {
 constexpr int SX = 20, SW = 280, ROW_H = 38, ROW_GAP = 6, S_PAD = 12, S_TITLE = 34;
 constexpr int S_MAX_H = 220;  // max popup height
 constexpr int LIST_X = SX + S_PAD, LIST_W = SW - S_PAD * 2;
-constexpr int DRAG = 8;
 }  // namespace
 
 struct ChooseView {
@@ -176,7 +175,7 @@ int choose(const char* title, const std::vector<String>& options, int current) {
       pressed = downAt;
       if (pressed >= 0) drawChooseList(v, options, current, pressed);
     } else if (down && t.isPressed()) {
-      if (!dragging && v.maxScroll() > 0 && downAt != -2 && abs(t.y - downY) >= DRAG) {
+      if (!dragging && v.maxScroll() > 0 && downAt != -2 && abs(t.y - downY) >= metrics.dragPx) {
         dragging = true;
         pressed = -1;
       }
@@ -206,7 +205,6 @@ static constexpr int BTN = 48;                          // arrow button size
 static constexpr int LEFT_X = X + 12, RIGHT_X = X + W - 12 - BTN, BTN_Y = Y + 46;
 static constexpr int BAR_X = LEFT_X + BTN + 12, BAR_W = RIGHT_X - 12 - BAR_X, BAR_Y = BTN_Y + 14, BAR_H = 20;
 static constexpr int DONE_W = 120, DONE_H = 34, DONE_X = X + (W - DONE_W) / 2, DONE_Y = Y + H - DONE_H - 12;
-static constexpr uint32_t REPEAT_AFTER_MS = 400, REPEAT_EVERY_MS = 120;
 
 
 enum class Part { None, Left, Right, Done, Inside, Outside };
@@ -287,7 +285,7 @@ int adjust(const char* title, int value, void (*apply)(int), int step) {
       if (pressed == Part::Right) change(step);
       drawAll(title, value, pressed);
     } else if (t.isPressed() && (pressed == Part::Left || pressed == Part::Right)) {
-      if (now - pressedAt >= REPEAT_AFTER_MS && now - repeatedAt >= REPEAT_EVERY_MS) {
+      if (now - pressedAt >= timing.repeatAfterMs && now - repeatedAt >= timing.repeatEveryMs) {
         repeatedAt = now;
         change(pressed == Part::Left ? -step : step);
       }

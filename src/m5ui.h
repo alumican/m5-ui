@@ -9,12 +9,52 @@ namespace m5ui {
 
 enum class Light { Ok, Wait, Ng, Off };
 
+// Tokens. Apps may change them after M5.begin() and before drawing.
+
 // RGB565 colors.
 struct Theme {
   uint16_t bg = 0x18E3, line = 0x6B4D, ok = 0x2EA6, wait = 0xFD20, ng = 0xF206, off = 0x6B4D;
   uint16_t button = 0x3A9F, buttonOff = 0x3186, text = TFT_WHITE, sub = 0x6B4D;
+  // InfoView, its contents and Subtitle
+  uint16_t screen = TFT_BLACK;             // background, to match the face around them
+  uint16_t dim = 0x9CD3;                   // secondary text
+  uint16_t accent = 0xFFE0;                // highlights, cursor, progress
+  uint16_t warn = 0xFD20, error = 0xF206;  // Terminal levels
+  uint16_t subtitle = TFT_WHITE, subtitleBg = TFT_BLACK;
+  // PinHeader kinds
+  uint16_t pinNone = 0x3186, pinPower = 0xF206, pinGround = 0x8410, pinGpio = 0x2EA6;
+  uint16_t pinI2c = 0x4D7F, pinSpi = 0xA21E, pinUart = 0xFD20, pinOther = 0xF418;
 };
 extern Theme theme;
+
+// Sizes in pixels and fonts. InfoView, its contents and Subtitle use them.
+struct Metrics {
+  const lgfx::IFont* font = &fonts::Font2;       // text; set a Japanese font (e.g. &fonts::efontJA_16) for kana
+  const lgfx::IFont* titleFont = &fonts::Font4;  // InfoView title
+  const lgfx::IFont* smallFont = &fonts::Font0;  // numbers on pins
+  int16_t pad = 6;
+  // InfoView frame. The top-left corner of it (cornerW x cornerH) is left to the app, e.g. for a small face.
+  // The title sits right of the corner; the content gets the full width below it.
+  int16_t infoX = 0, infoY = 0, infoW = 320, infoH = 216;
+  int16_t cornerW = 96, cornerH = 72;
+  int16_t titleH = 28;  // title band height when there is no corner
+  int16_t subtitleY = 216, subtitleH = 24;
+  int16_t lineGap = 2;  // between text lines in Terminal and Typing
+  int16_t rowH = 22;    // StatusList row
+  int16_t pinPitch = 22, overviewPitch = 7;  // PinHeader: pin spacing, and in the small whole-header map
+  int16_t dragPx = 8;   // drag distance that starts scrolling in Panel and choose()
+};
+extern Metrics metrics;
+
+// Durations in milliseconds.
+struct Timing {
+  uint16_t blinkMs = 500;          // PinHeader highlight blink, each phase
+  uint16_t cursorMs = 500;         // Typing cursor blink, each phase
+  uint16_t subtitleSpeed = 60;     // px per second for a subtitle wider than the screen; 0 cuts it with "..."
+  uint16_t subtitleHoldMs = 1500;  // pause at both ends of a subtitle scroll
+  uint16_t repeatAfterMs = 400, repeatEveryMs = 120;  // adjust() hold-to-repeat
+};
+extern Timing timing;
 
 class Panel {
  public:
@@ -113,6 +153,175 @@ class Progress {
   void drawMessage();
   void drawCancel();
   bool onCancel(int x, int y) const;
+};
+
+// ---- Info screen ----
+// InfoView shows one Content at a time in metrics.info*, leaving the top-left corner to the app.
+// Everything here is drawn off screen in PSRAM sprites and pushed whole, so it does not flicker.
+// Draw from loop(): call update() each time; it redraws only when something changed.
+
+// Content of an InfoView. Subclass it to draw your own, and call invalidate() when it changes.
+class Content {
+ public:
+  virtual ~Content() {}
+  // Draws on g, w x h from (0, 0). g is already filled with theme.screen.
+  virtual void draw(LovyanGFX& g, int w, int h) = 0;
+  // Called by InfoView::update(). Returns true if the look changed with time (blinking).
+  virtual bool animate(uint32_t now) { (void)now; return false; }
+  void invalidate() { dirty = true; }
+
+ private:
+  friend class InfoView;
+  bool dirty = true;
+};
+
+class InfoView {
+ public:
+  // Allocates the sprites. open() calls it if needed; call it again after changing metrics. False if out of memory.
+  bool begin();
+  // Draws the title and the content. content may be nullptr for an empty view.
+  void open(const String& title, Content* content);
+  void setTitle(const String& title);
+  void setContent(Content* content);
+  // Draws nothing; redraw your screen afterwards. Keeps the sprites for the next open().
+  void close();
+  bool isOpen() const { return opened; }
+  // Call from loop(). Redraws what changed.
+  void update();
+  // Draws again, e.g. after something else drew over the view.
+  void show();
+  // Content size.
+  int width() const { return body.width(); }
+  int height() const { return body.height(); }
+
+ private:
+  M5Canvas head, body;
+  String title;
+  Content* content = nullptr;
+  bool opened = false, headDirty = true, bodyDirty = true;
+  int headX = 0, headY = 0, bodyX = 0, bodyY = 0;
+  void drawHead();
+  void drawBody();
+};
+
+enum class PinKind : uint8_t { None, Power, Ground, Gpio, I2c, Spi, Uart, Other };
+
+// 2 x N pin header. Pin colors come from theme.pin*. Highlighted pins get a ring, a step number and, optionally,
+// blink. When the header does not fit at metrics.pinPitch, a small map of the whole header is drawn beside a
+// close-up of the highlighted pins.
+class PinHeader : public Content {
+ public:
+  // pins: total, even. Position i is in row i / 2, column i % 2, so position 0 is pin 1 of a common header.
+  void begin(int pins);
+  int pins() const { return list.size(); }
+  // number: printed on the pin (e.g. "11"). name: printed beside it (e.g. "GPIO17").
+  void setPin(int index, const String& number, const String& name, PinKind kind);
+  // Clockwise, 0 / 90 / 180 / 270, to match the board as seen. 0: position 0 at the top left, rows going down.
+  void setRotation(int degrees);
+  // step: number shown beside the pin (1, 2, ...), or 0 for none.
+  void highlight(int index, int step = 0);
+  void clearHighlights();
+  void setBlink(bool on);
+
+  void draw(LovyanGFX& g, int w, int h) override;
+  bool animate(uint32_t now) override;
+
+ private:
+  struct Pin {
+    String number, name;
+    PinKind kind;
+    uint8_t step;
+    bool on;
+  };
+  std::vector<Pin> list;
+  int rotation = 0;
+  bool blink = false, phase = true;
+};
+
+enum class Level : uint8_t { Normal, Warn, Error };
+
+// The last lines of a log, colored by level (theme.text, theme.warn, theme.error).
+class Terminal : public Content {
+ public:
+  // keep: lines kept, newest last.
+  explicit Terminal(size_t keep = 32) : keep(keep) {}
+  // '\n' starts a new line.
+  void print(const String& text, Level level = Level::Normal);
+  void clear();
+  // true (default): wrap long lines. false: cut them with "...".
+  void setWrap(bool on);
+
+  void draw(LovyanGFX& g, int w, int h) override;
+
+ private:
+  struct Line {
+    String text;
+    Level level;
+  };
+  std::vector<Line> lines;
+  size_t keep;
+  bool wrapLines = true;
+};
+
+// Text being typed: its last lines with a blinking cursor, and a "done / total" progress bar.
+class Typing : public Content {
+ public:
+  // The text typed so far. Only the last 2 KB are kept.
+  void setText(const String& typed);
+  void append(const String& more);
+  // total 0 hides the progress bar.
+  void setProgress(int done, int total);
+  void clear();
+
+  void draw(LovyanGFX& g, int w, int h) override;
+  bool animate(uint32_t now) override;
+
+ private:
+  String typed;
+  int done = 0, total = 0;
+  bool phase = true;
+  void trim();
+};
+
+// Rows of a colored dot, a name and a value. Wraps into two columns when the rows do not fit.
+class StatusList : public Content {
+ public:
+  // Updates the row with this name, or adds it at the end.
+  void set(const String& name, const String& value, Light light);
+  void remove(const String& name);
+  void clear();
+
+  void draw(LovyanGFX& g, int w, int h) override;
+
+ private:
+  struct Row {
+    String name, value;
+    Light light;
+  };
+  std::vector<Row> rows;
+};
+
+// One line of text in a band at the bottom of the screen (metrics.subtitle*), over the face or an InfoView.
+// Text wider than the screen scrolls (timing.subtitle*). Call update() from loop().
+class Subtitle {
+ public:
+  // Draws text. Empty text clears the band to theme.subtitleBg.
+  void set(const String& text);
+  void clear() { set(""); }
+  const String& text() const { return txt; }
+  // Call from loop(). Scrolls long text.
+  void update();
+  // Draws again, e.g. after the face drew over the band.
+  void show();
+
+ private:
+  M5Canvas canvas;
+  String txt;
+  int textW = 0, drawnOffset = -1;
+  uint32_t startedAt = 0;
+  bool ready();
+  int offset(uint32_t now) const;
+  void draw(int offset);
 };
 
 namespace events {

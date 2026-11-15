@@ -8,8 +8,9 @@ In order.
 
 ## 2. Tokens
 
-- [ ] Let apps override colors, sizes and timings. `m5ui::theme` covers colors only.
-- [ ] Move hard-coded values into tokens: button and row heights, margins, popup geometry, font (`Font2`), hold-to-repeat timing (400 ms, 120 ms), drag threshold (8 px).
+- [x] Let apps override colors, sizes and timings: `m5ui::theme`, `m5ui::metrics`, `m5ui::timing`. InfoView, its contents and Subtitle use them throughout.
+- [x] Hold-to-repeat timing and drag threshold are tokens.
+- [ ] Move the rest of Panel and the popups into tokens: button and row heights, margins, popup geometry, font (`Font2`).
 
 ## 3. Dot font
 
@@ -24,9 +25,9 @@ In order.
 
 Then:
 
-- [ ] Shrink the face to small eyes in a corner.
-- [ ] One-line subtitle.
-- [ ] Info panel container, one at a time; the app draws the content.
+- [ ] Shrink the face to small eyes in a corner. (InfoView leaves the corner free; the app draws the face there for now.)
+- [x] One-line subtitle: `Subtitle`.
+- [x] Info panel container, one at a time: `InfoView`, with `PinHeader`, `Terminal`, `Typing` and `StatusList` contents.
 - [ ] Lip sync: move the mouth by an audio level the app passes in.
 
 ## Out of scope
