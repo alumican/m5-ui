@@ -73,12 +73,12 @@ void setupCircuit() {
   using P = m5ui::PartKind;
   circuit.setBoard("40-pin board");
   int a = circuit.addLoop("11", "GPIO17", "9", "GND");
-  circuit.addPart(a, P::Resistor, "330 ohm");
+  circuit.setResistor(a, circuit.addPart(a, P::Resistor, "330 ohm"), 330);  // orange, orange, brown, gold
   circuit.addPart(a, P::Led, "LED");
   int b = circuit.addLoop("13", "GPIO27", "14", "GND");
   circuit.addPart(b, P::Button, "Button");
   int c = circuit.addLoop("15", "GPIO22", "20", "GND");
-  circuit.addPart(c, P::Resistor, "100 ohm");
+  circuit.setResistor(c, circuit.addPart(c, P::Resistor, "100 ohm"), 100);  // brown, black, brown, gold
   const uint16_t colors[] = {0xF800, 0xFFE0, 0x07E0};
   const char* names[] = {"Red", "Yellow", "Green"};
   for (int i = 0; i < 3; i++) circuit.setPartColor(c, circuit.addPart(c, P::Led, names[i]), colors[i]);

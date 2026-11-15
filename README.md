@@ -21,7 +21,7 @@ UI components for M5Unified on 320x240 displays (Core2, CoreS3). Tested with M5U
 
 ```ini
 lib_deps =
-  https://github.com/alumican/m5-ui.git#v0.6.0
+  https://github.com/alumican/m5-ui.git#v0.6.1
 ```
 
 ## Panel
@@ -160,7 +160,8 @@ using P = m5ui::PartKind;
 
 circuit.setBoard("40-pin board");
 int led = circuit.addLoop("11", "GPIO17", "9", "GND");  // from terminal, back to terminal (wire into it: black)
-circuit.addPart(led, P::Resistor, "330 ohm");           // wire into it: theme.wire (yellow)
+int r = circuit.addPart(led, P::Resistor, "330 ohm");   // wire into it: theme.wire (yellow)
+circuit.setResistor(led, r, 330);                       // bands: orange, orange, brown, gold
 circuit.addPart(led, P::Led, "LED");                    // its + leg faces "from"
 int btn = circuit.addLoop("1", "3V3", "13", "GPIO27", m5ui::theme.wire);
 circuit.addPart(btn, P::Button, "Button", m5ui::theme.wirePower);  // red wire from 3V3 to the button
@@ -170,10 +171,11 @@ info.open("Wiring", &circuit);
 ```
 
 - `addLoop(fromNumber, fromName, toNumber, toName, back)`: `back` is the color of the wire into "to" (default `theme.wireGround`). Terminal labels show on two lines when there is room.
-- `addPart(loop, kind, label, wire)`: in order from "from" to "to"; `wire` is the color of the wire into the part. `setPartColor()` colors an LED, a button cap, a buzzer or a box; `setReversed()` turns an LED or buzzer so its + leg faces "to".
+- `addPart(loop, kind, label, wire)`: in order from "from" to "to"; `wire` is the color of the wire into the part. `setPartColor()` colors an LED, a button cap, a buzzer or a box; `setReversed()` turns an LED or buzzer so its + leg faces "to", or a resistor so its tolerance band is at the "from" end.
+- `setResistor(loop, part, ohms, tolerancePercent = 5)` draws the 4-band color code: two digits, multiplier (gold x0.1, silver x0.01) and tolerance (1, 2, 0.5, 0.25, 0.1, 0.05, 5, 10; 20 has no band), e.g. 1k: brown, black, red, gold; 4.7k: yellow, violet, red, gold. Without it, plain bands. Band colors: `theme.bands` (black to white, gold, silver).
 - 1 to 3 loops fit in the default content area; parts grow with the room (`metrics.circuitRowMin`, `circuitRowMax`). More loops scroll to the highlighted one, with arrows.
 - Labels use `metrics.smallFont` (ASCII); write "330 ohm" rather than the ohm sign unless your font has it.
-- Colors: `theme.board`, `boardPad`, `wire`, `wirePower`, `wireGround`, `wireEdge`, `lead`, `led`, `buttonCap`, `buzzer`, `resistor`, `resistorBand`. Thickness: `metrics.wireW`. Blink: `timing.blinkMs`.
+- Colors: `theme.board`, `boardPad`, `wire`, `wirePower`, `wireGround`, `wireEdge`, `lead`, `led`, `buttonCap`, `buzzer`, `resistor`, `resistorBand`, `bands`. Thickness: `metrics.wireW`. Blink: `timing.blinkMs`.
 
 ## Face
 

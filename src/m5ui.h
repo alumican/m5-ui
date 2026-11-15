@@ -30,6 +30,8 @@ struct Theme {
   uint16_t wireEdge = 0x8410;                      // outline of dark wires
   uint16_t lead = 0xBDF7;                          // part legs
   uint16_t led = 0xF800, buttonCap = 0xF800, buzzer = 0x2945, resistor = 0xD5D0, resistorBand = 0x8200;
+  // Resistor color code: black, brown, red, orange, yellow, green, blue, violet, gray, white, gold, silver
+  uint16_t bands[12] = {0x0000, 0x8A22, 0xE000, 0xFC00, 0xFFE0, 0x0560, 0x001F, 0x901A, 0x7BEF, 0xFFFF, 0xA460, 0x8C71};
   // Face: lines and the starting background
   uint16_t face = TFT_WHITE, faceBg = TFT_BLACK;
   // PinHeader kinds
@@ -297,8 +299,13 @@ class Circuit : public Content {
   int addPart(int loop, PartKind kind, const String& label, uint16_t wire = theme.wire);
   // Body color: LED, button cap, buzzer, box. Defaults: theme.led, theme.buttonCap, theme.buzzer, theme.bg.
   void setPartColor(int loop, int part, uint16_t color);
-  // LED and buzzer: the + leg faces "from" unless reversed.
+  // LED and buzzer: the + leg faces "from" unless reversed. Resistor: the tolerance band is at the "to" end
+  // unless reversed.
   void setReversed(int loop, int part, bool reversed);
+  // Resistor: bands from its value, 4-band code (two digits, multiplier, tolerance), e.g. 330 ohm: orange,
+  // orange, brown, gold. tolerancePercent: 1, 2, 0.5, 0.25, 0.1, 0.05, 5, 10, or 20 for none. Without a value,
+  // plain decorative bands.
+  void setResistor(int loop, int part, float ohms, float tolerancePercent = 5);
   // part -1: the whole loop.
   void highlight(int loop, int part = -1);
   void clearHighlights();
@@ -314,6 +321,7 @@ class Circuit : public Content {
     uint16_t wire;
     int32_t color;  // -1: default for the kind
     bool reversed, on;
+    float ohms, tolerance;  // resistor; ohms 0: decorative bands
   };
   struct Loop {
     String fromNumber, fromName, toNumber, toName;

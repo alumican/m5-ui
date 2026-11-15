@@ -1,3 +1,5 @@
+#include <math.h>
+
 #include <algorithm>
 
 #include "m5ui_internal.h"
@@ -25,7 +27,7 @@ int Circuit::addLoop(const String& fn, const String& fname, const String& tn, co
 
 int Circuit::addPart(int loop, PartKind kind, const String& label, uint16_t wire) {
   if (loop < 0 || loop >= (int)loops.size()) return -1;
-  Part p = {kind, label, wire, -1, false, false};
+  Part p = {kind, label, wire, -1, false, false, 0, 5};
   loops[loop].parts.push_back(p);
   invalidate();
   return loops[loop].parts.size() - 1;
@@ -41,6 +43,30 @@ void Circuit::setReversed(int loop, int part, bool r) {
   if (loop < 0 || loop >= (int)loops.size() || part < 0 || part >= (int)loops[loop].parts.size()) return;
   loops[loop].parts[part].reversed = r;
   invalidate();
+}
+
+void Circuit::setResistor(int loop, int part, float ohms, float tolerance) {
+  if (loop < 0 || loop >= (int)loops.size() || part < 0 || part >= (int)loops[loop].parts.size()) return;
+  loops[loop].parts[part].ohms = ohms;
+  loops[loop].parts[part].tolerance = tolerance;
+  invalidate();
+}
+
+// 4-band code: indexes into theme.bands for two digits, multiplier and tolerance (-1: no band). False if the
+// value cannot be coded (0, negative, or beyond white x 10^9).
+static bool colorCode(float ohms, float tolerance, int out[4]) {
+  if (!(ohms > 0)) return false;
+  int e = (int)floorf(log10f(ohms)) - 1;  // ohms = dd x 10^e
+  long dd = lroundf(ohms / powf(10, e));
+  if (dd >= 100) dd /= 10, e++;
+  if (e < -2 || e > 9) return false;
+  out[0] = dd / 10, out[1] = dd % 10, out[2] = e >= 0 ? e : e == -1 ? 10 : 11;
+  static const float tol[] = {1, 2, 0.5f, 0.25f, 0.1f, 0.05f, 5, 10};
+  static const int band[] = {1, 2, 5, 6, 7, 8, 10, 11};
+  out[3] = -1;
+  for (int i = 0; i < 8; i++)
+    if (fabsf(tolerance - tol[i]) < tol[i] * 0.01f) out[3] = band[i];
+  return true;
 }
 
 void Circuit::highlight(int loop, int part) {
@@ -129,13 +155,28 @@ void Circuit::drawPart(LovyanGFX& g, const Part& p, int cx, int y, int pw, int r
       break;
     }
     case PartKind::Resistor: {
-      int bh = partAbove(p.kind, r) * 2, bw = std::min(pw * 3 / 5, std::max(14, r * 4));
+      int bh = partAbove(p.kind, r) * 2, bw = std::min(pw - 8, std::max(16, r * 5));
       leg(g, x0, y, cx - bw / 2, y);
       leg(g, cx + bw / 2, y, x1, y);
       if (lit) g.fillRoundRect(cx - bw / 2 - 3, y - bh / 2 - 3, bw + 6, bh + 6, bh / 2 + 3, theme.accent);
       g.fillRoundRect(cx - bw / 2, y - bh / 2, bw, bh, bh / 2, theme.resistor);
-      for (int k = 0; k < 3; k++)
-        g.fillRect(cx - bw / 4 + k * bw / 6 - 1, y - bh / 2, std::max(2, bw / 12), bh, theme.resistorBand);
+      int code[4];
+      if (!colorCode(p.ohms, p.tolerance, code)) {  // decorative
+        for (int k = 0; k < 3; k++)
+          g.fillRect(cx - bw / 4 + k * bw / 6 - 1, y - bh / 2, std::max(2, bw / 12), bh, theme.resistorBand);
+        break;
+      }
+      g.drawRoundRect(cx - bw / 2, y - bh / 2, bw, bh, bh / 2, theme.resistor);
+      // Digits and multiplier grouped toward one end, tolerance alone near the other, as on real parts.
+      // Bands narrow down on a small body so all four stay apart.
+      int band = std::max(1, std::min(bw / 9, 4)), gap = std::max(1, band * 2 / 3);
+      int inset = std::max(bh / 2, band + 1);
+      for (int k = 0; k < 4; k++) {
+        if (code[k] < 0) continue;
+        int off = k < 3 ? inset + k * (band + gap) : bw - inset - band;
+        int x = p.reversed ? cx + bw / 2 - off - band : cx - bw / 2 + off;
+        g.fillRect(x, y - bh / 2 + 1, band, bh - 2, theme.bands[code[k]]);  // framed by the body, so black shows
+      }
       break;
     }
     case PartKind::Button: {
@@ -253,10 +294,14 @@ void Circuit::draw(LovyanGFX& g, int w, int h) {
     // Parts spread along the outgoing wire; the return runs along the bottom.
     const int xr = w - pad - t, np = l.parts.size();
     const int x0 = bx + 2, span = xr - 6 - x0;
-    const int slot = np ? span / np : span, pw = std::min(slot - 6, std::max(r * 4, 24));
+    const int slot = np ? span / np : span;
+    // Part width: resistors longer, so their bands stay apart.
+    auto widthOf = [&](const Part& p) {
+      return std::min(slot - 6, p.kind == PartKind::Resistor ? std::max(r * 6, 32) : std::max(r * 4, 24));
+    };
     int xPrev = bx;
     for (int i = 0; i < np; i++) {
-      int cx = x0 + slot * i + slot / 2;
+      int cx = x0 + slot * i + slot / 2, pw = widthOf(l.parts[i]);
       wireRect(g, xPrev, y1, cx - pw / 2, y1, l.parts[i].wire);
       xPrev = cx + pw / 2;
     }
@@ -266,7 +311,7 @@ void Circuit::draw(LovyanGFX& g, int w, int h) {
     for (int i = 0; i < np; i++) {
       const Part& p = l.parts[i];
       int cx = x0 + slot * i + slot / 2;
-      drawPart(g, p, cx, y1, pw, r, p.on && phase);
+      drawPart(g, p, cx, y1, widthOf(p), r, p.on && phase);
       if (p.kind == PartKind::Box || !p.label.length()) continue;
       g.setFont(metrics.smallFont);
       bool lit = (p.on || l.on) && phase;
