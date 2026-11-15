@@ -10,6 +10,7 @@ UI components for M5Unified on 320x240 displays (Core2, CoreS3). Tested with M5U
 - **events**: log of the last 12 events, also printed to Serial.
 - **InfoView**: one piece of information at a time, beside a small face the app draws in the top-left corner. Contents: **PinHeader**, **Terminal**, **Typing**, **StatusList**, or your own.
 - **Subtitle**: one line at the bottom of the screen, over the face or an InfoView.
+- **Badge**: one small icon in a fixed square, top right by default, over the face or an InfoView. Icons: `mic`, `micOff`, or your own.
 - **Tokens**: colors, sizes, fonts and timings in `m5ui::theme`, `m5ui::metrics` and `m5ui::timing`.
 
 `examples/Showcase` shows them all (`pio run` in that folder).
@@ -18,7 +19,7 @@ UI components for M5Unified on 320x240 displays (Core2, CoreS3). Tested with M5U
 
 ```ini
 lib_deps =
-  https://github.com/alumican/m5-ui.git#v0.3.0
+  https://github.com/alumican/m5-ui.git#v0.4.0
 ```
 
 ## Panel
@@ -113,9 +114,9 @@ void setup() {
 void showWiring() {
   M5.Display.fillRect(0, 0, 320, 216, TFT_BLACK);  // the face shrinks into the corner; the app draws it
   header.clearHighlights();
-  header.highlight(0, 1);   // step 1
-  header.highlight(5, 2);   // step 2
-  header.highlight(10, 3);  // step 3
+  header.highlight(0, 1, "Red wire");  // step 1, with a note for the legend
+  header.highlight(5, 2, "Black wire");
+  header.highlight(10, 3, "LED +");
   header.setBlink(true);
   header.setRotation(90);   // as the board is seen
   info.open("Wiring", &header);
@@ -136,15 +137,41 @@ void loop() {
 
 Contents:
 
-- **PinHeader**: a 2 x N header. Position `i` is row `i / 2`, column `i % 2`. Each pin has a number printed on it, a name beside it and a `PinKind` color (`theme.pin*`). `highlight(i, step)` rings a pin and shows its step number; `setBlink(true)` blinks them. `setRotation(0 / 90 / 180 / 270)` turns the drawing clockwise; text stays upright. When the header does not fit at `metrics.pinPitch`, a small map of the whole header is drawn beside a close-up of the highlighted rows.
+- **PinHeader**: a 2 x N header. Position `i` is row `i / 2`, column `i % 2`. Each pin has a number printed on it, a name beside it and a `PinKind` color (`theme.pin*`). `highlight(i, step)` rings a pin and shows its step number; `setBlink(true)` blinks them. `setRotation(0 / 90 / 180 / 270)` turns the drawing clockwise; text stays upright. When the header does not fit at `metrics.pinPitch`, a small map of the whole header is drawn beside a close-up of the highlighted rows. A legend at the bottom lists the highlighted pins by step: number and name, position as drawn (e.g. "row 6 from top, left", or "col 15 from left, top" when turned) and the note; `setLegend(false)` hides it. The position words are in `m5ui::words`.
 - **Terminal**: `print(text, Level::Normal / Warn / Error)` adds lines (`'\n'` splits); the last ones that fit are shown, colored by level. `setWrap(false)` cuts long lines instead of wrapping.
 - **Typing**: `setText()` or `append()` the text typed so far and `setProgress(done, total)`. Shows the last lines with a blinking cursor and a "done / total" bar.
 - **StatusList**: `set(name, value, Light)` adds or updates a row with a colored dot. Rows that do not fit go into a second column.
 - **Your own**: subclass `m5ui::Content`, draw in `draw(LovyanGFX& g, int w, int h)` and call `invalidate()` when it changes. Override `animate(now)` to return true when it should be redrawn as time passes.
 
-`Subtitle::set(text)` draws one line in the band at `metrics.subtitleY`. Text wider than the screen scrolls back and forth at `timing.subtitleSpeed` (0 cuts it with "..."); call `update()` from `loop()`. `set("")` clears the band. Keep the face above the band, or call `show()` after drawing it.
+`Subtitle::set(text)` draws one line in the band at `metrics.subtitleY`, centered or from the left (`metrics.subtitleAlign = m5ui::Align::Left`, `metrics.pad` from the edge). Text wider than the screen scrolls back and forth at `timing.subtitleSpeed` (0 cuts it with "..."); call `update()` from `loop()`. `set("")` clears the band. Keep the face above the band, or call `show()` after drawing it.
 
 The default fonts are ASCII only. For Japanese, set a font that has it, e.g. `m5ui::metrics.font = &fonts::efontJA_16;`. Text wraps at spaces, or between characters where there are none.
+
+## Badge
+
+```cpp
+m5ui::Badge badge;
+
+badge.set(listening ? m5ui::icons::mic : m5ui::icons::micOff);  // draws only when it changes
+
+void loop() {
+  drawFace();      // if the face draws over the badge every frame,
+  badge.show();    // push it again: a small sprite, cheap
+  badge.update();  // blinks the red dot of icons::mic
+}
+```
+
+- The square is `metrics.badgeX`, `badgeY`, `badgeSize` (default 28 x 28 at the top right). It clears the InfoView title, the content and the subtitle.
+- While visible, InfoView and Subtitle draw around the square, so they do not wipe it. Popups and Panel cover it; call `show()` after them.
+- `hide()` clears the square to `theme.screen`.
+- Colors: `theme.badgeBg`, `iconOn`, `iconOff`, `iconAlert`. Blink: `timing.badgeBlinkMs` (0 keeps the dot on).
+- Your own icon: a draw function and whether it blinks.
+
+```cpp
+void drawWifi(LovyanGFX& g, int size, bool on) { /* draw in size x size from (0, 0) */ }
+const m5ui::Icon wifiIcon = {drawWifi, false};
+badge.set(wifiIcon);
+```
 
 ## Tokens
 
@@ -153,9 +180,10 @@ m5ui::theme.accent = TFT_CYAN;       // highlights, cursor, progress
 m5ui::metrics.cornerW = 120;         // a larger face corner
 m5ui::metrics.font = &fonts::efontJA_16;
 m5ui::timing.blinkMs = 300;
+m5ui::words.rowFrom = "row %d from top (%s)";  // printf: number, then side (words.left / right / top / bottom)
 ```
 
-Set them after `M5.begin()` and before drawing. InfoView and Subtitle size their sprites on the first `open()` / `set()`; after changing `metrics` sizes, call `info.begin()` again. Panel and the popups still use fixed sizes and `Font2`; they read `theme`, `metrics.dragPx` and `timing.repeat*`.
+`m5ui::words` holds the few words components draw, for another language. Set them after `M5.begin()` and before drawing. InfoView and Subtitle size their sprites on the first `open()` / `set()`; after changing `metrics` sizes, call `info.begin()` again. Panel and the popups still use fixed sizes and `Font2`; they read `theme`, `metrics.dragPx` and `timing.repeat*`.
 
 ## events
 

@@ -65,9 +65,14 @@ void InfoView::drawHead() {
   head.setFont(metrics.titleFont);
   head.setTextColor(theme.text);
   head.setTextDatum(middle_left);
-  head.drawString(fit(head, title, head.width() - pad * 2), pad, head.height() / 2);
+  int titleW = head.width() - pad * 2;
+  const Metrics& m = metrics;  // leave room for a badge in the title band
+  if (m.badgeSize > 0 && m.badgeX < headX + head.width() && m.badgeX + m.badgeSize > headX &&
+      m.badgeY < headY + head.height() && m.badgeY + m.badgeSize > headY)
+    titleW = std::min(titleW, m.badgeX - headX - pad * 2);
+  head.drawString(fit(head, title, titleW), pad, head.height() / 2);
   head.drawFastHLine(pad, head.height() - 1, head.width() - pad * 2, theme.line);
-  head.pushSprite(&M5.Display, headX, headY);
+  detail::push(head, headX, headY);
 }
 
 void InfoView::drawBody() {
@@ -79,7 +84,7 @@ void InfoView::drawBody() {
   body.setTextColor(theme.text);
   body.setTextDatum(top_left);
   if (content) content->draw(body, body.width(), body.height());
-  body.pushSprite(&M5.Display, bodyX, bodyY);
+  detail::push(body, bodyX, bodyY);
 }
 
 // ---- Terminal ----
@@ -298,9 +303,12 @@ void Subtitle::draw(int off) {
   if (txt.length()) {
     canvas.setFont(metrics.font);
     canvas.setTextColor(theme.subtitle);
-    if (textW <= avail) {
+    if (textW <= avail && metrics.subtitleAlign == Align::Center) {
       canvas.setTextDatum(middle_center);
       canvas.drawString(txt, w / 2, h / 2);
+    } else if (textW <= avail) {
+      canvas.setTextDatum(middle_left);
+      canvas.drawString(txt, pad, h / 2);
     } else if (!timing.subtitleSpeed) {
       canvas.setTextDatum(middle_left);
       canvas.drawString(fit(canvas, txt, avail), pad, h / 2);
@@ -311,7 +319,7 @@ void Subtitle::draw(int off) {
       canvas.clearClipRect();
     }
   }
-  canvas.pushSprite(&M5.Display, 0, metrics.subtitleY);
+  detail::push(canvas, 0, metrics.subtitleY);
 }
 
 }  // namespace m5ui

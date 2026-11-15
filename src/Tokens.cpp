@@ -7,6 +7,7 @@ namespace m5ui {
 Theme theme;
 Metrics metrics;
 Timing timing;
+Words words;
 
 namespace detail {
 
@@ -78,6 +79,30 @@ String fit(LovyanGFX& g, const String& text, int w) {
     if (g.textWidth(s + "...") <= w) break;
   }
   return s + "...";
+}
+
+Area reserved = {0, 0, 0, 0};
+
+void push(M5Canvas& c, int x, int y) {
+  auto& d = M5.Display;
+  const Area& r = reserved;
+  int w = c.width(), h = c.height();
+  if (r.w <= 0 || r.x >= x + w || r.x + r.w <= x || r.y >= y + h || r.y + r.h <= y) {
+    c.pushSprite(&d, x, y);
+    return;
+  }
+  // The bands above, below, left and right of the square; the display clips each push.
+  int top = std::max(y, r.y), bottom = std::min(y + h, r.y + r.h);
+  const Area parts[4] = {{x, y, w, r.y - y},
+                         {x, r.y + r.h, w, y + h - r.y - r.h},
+                         {x, top, r.x - x, bottom - top},
+                         {r.x + r.w, top, x + w - r.x - r.w, bottom - top}};
+  for (const Area& p : parts) {
+    if (p.w <= 0 || p.h <= 0) continue;
+    d.setClipRect(p.x, p.y, p.w, p.h);
+    c.pushSprite(&d, x, y);
+  }
+  d.clearClipRect();
 }
 
 bool makeSprite(M5Canvas& c, int w, int h) {

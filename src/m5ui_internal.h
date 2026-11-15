@@ -16,6 +16,13 @@ void wrap(LovyanGFX& g, const String& text, int w, std::vector<String>& out);
 String fit(LovyanGFX& g, const String& text, int w);
 // Bytes in the UTF-8 character that starts with c.
 int charLen(uint8_t c);
+// Square kept clear by a visible Badge; w 0 when none.
+struct Area {
+  int x, y, w, h;
+};
+extern Area reserved;
+// Pushes c to the display at (x, y), leaving out the reserved square.
+void push(M5Canvas& c, int x, int y);
 // Allocates a 16-bit sprite, in PSRAM if there is any. False if out of memory.
 bool makeSprite(M5Canvas& c, int w, int h);
 

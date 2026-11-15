@@ -21,11 +21,16 @@ struct Theme {
   uint16_t accent = 0xFFE0;                // highlights, cursor, progress
   uint16_t warn = 0xFD20, error = 0xF206;  // Terminal levels
   uint16_t subtitle = TFT_WHITE, subtitleBg = TFT_BLACK;
+  // Badge and icons
+  uint16_t badgeBg = 0x18E3;
+  uint16_t iconOn = TFT_WHITE, iconOff = 0x6B4D, iconAlert = 0xF206;
   // PinHeader kinds
   uint16_t pinNone = 0x3186, pinPower = 0xF206, pinGround = 0x8410, pinGpio = 0x2EA6;
   uint16_t pinI2c = 0x4D7F, pinSpi = 0xA21E, pinUart = 0xFD20, pinOther = 0xF418;
 };
 extern Theme theme;
+
+enum class Align : uint8_t { Left, Center };
 
 // Sizes in pixels and fonts. InfoView, its contents and Subtitle use them.
 struct Metrics {
@@ -39,10 +44,12 @@ struct Metrics {
   int16_t cornerW = 96, cornerH = 72;
   int16_t titleH = 28;  // title band height when there is no corner
   int16_t subtitleY = 216, subtitleH = 24;
+  Align subtitleAlign = Align::Center;  // Left: starts metrics.pad from the left edge
   int16_t lineGap = 2;  // between text lines in Terminal and Typing
   int16_t rowH = 22;    // StatusList row
   int16_t pinPitch = 22, overviewPitch = 7;  // PinHeader: pin spacing, and in the small whole-header map
   int16_t dragPx = 8;   // drag distance that starts scrolling in Panel and choose()
+  int16_t badgeX = 288, badgeY = 4, badgeSize = 28;  // Badge square, top right by default
 };
 extern Metrics metrics;
 
@@ -53,6 +60,7 @@ struct Timing {
   uint16_t subtitleSpeed = 60;     // px per second for a subtitle wider than the screen; 0 cuts it with "..."
   uint16_t subtitleHoldMs = 1500;  // pause at both ends of a subtitle scroll
   uint16_t repeatAfterMs = 400, repeatEveryMs = 120;  // adjust() hold-to-repeat
+  uint16_t badgeBlinkMs = 600;     // blinking part of an icon (e.g. the dot of icons::mic), each phase; 0 keeps it on
 };
 extern Timing timing;
 
@@ -155,6 +163,14 @@ class Progress {
   bool onCancel(int x, int y) const;
 };
 
+// Words drawn by components. Set them for another language (with a font that has it, see metrics.font).
+struct Words {
+  const char* rowFrom = "row %d from top, %s";         // PinHeader legend, upright header: row, side
+  const char* columnFrom = "col %d from left, %s";     // PinHeader legend, turned header: column, side
+  const char *left = "left", *right = "right", *top = "top", *bottom = "bottom";
+};
+extern Words words;
+
 // ---- Info screen ----
 // InfoView shows one Content at a time in metrics.info*, leaving the top-left corner to the app.
 // Everything here is drawn off screen in PSRAM sprites and pushed whole, so it does not flicker.
@@ -208,7 +224,8 @@ enum class PinKind : uint8_t { None, Power, Ground, Gpio, I2c, Spi, Uart, Other 
 
 // 2 x N pin header. Pin colors come from theme.pin*. Highlighted pins get a ring, a step number and, optionally,
 // blink. When the header does not fit at metrics.pinPitch, a small map of the whole header is drawn beside a
-// close-up of the highlighted pins.
+// close-up of the highlighted pins. A legend at the bottom lists the highlighted pins by step: number, name,
+// position as drawn (words.rowFrom / columnFrom) and note.
 class PinHeader : public Content {
  public:
   // pins: total, even. Position i is in row i / 2, column i % 2, so position 0 is pin 1 of a common header.
@@ -218,24 +235,26 @@ class PinHeader : public Content {
   void setPin(int index, const String& number, const String& name, PinKind kind);
   // Clockwise, 0 / 90 / 180 / 270, to match the board as seen. 0: position 0 at the top left, rows going down.
   void setRotation(int degrees);
-  // step: number shown beside the pin (1, 2, ...), or 0 for none.
-  void highlight(int index, int step = 0);
+  // step: number shown beside the pin (1, 2, ...), or 0 for none. note: shown in the legend (e.g. "LED +").
+  void highlight(int index, int step = 0, const String& note = String());
   void clearHighlights();
   void setBlink(bool on);
+  // Legend of the highlighted pins, on by default.
+  void setLegend(bool on);
 
   void draw(LovyanGFX& g, int w, int h) override;
   bool animate(uint32_t now) override;
 
  private:
   struct Pin {
-    String number, name;
+    String number, name, note;
     PinKind kind;
     uint8_t step;
     bool on;
   };
   std::vector<Pin> list;
   int rotation = 0;
-  bool blink = false, phase = true;
+  bool blink = false, phase = true, legend = true;
 };
 
 enum class Level : uint8_t { Normal, Warn, Error };
@@ -305,7 +324,7 @@ class StatusList : public Content {
 // Text wider than the screen scrolls (timing.subtitle*). Call update() from loop().
 class Subtitle {
  public:
-  // Draws text. Empty text clears the band to theme.subtitleBg.
+  // Draws text, aligned by metrics.subtitleAlign. Empty text clears the band to theme.subtitleBg.
   void set(const String& text);
   void clear() { set(""); }
   const String& text() const { return txt; }
@@ -322,6 +341,41 @@ class Subtitle {
   bool ready();
   int offset(uint32_t now) const;
   void draw(int offset);
+};
+
+// A small icon in a fixed square on screen (metrics.badge*), over the face or an InfoView.
+// While a Badge is visible, InfoView and Subtitle draw around its square. One Badge at a time.
+
+// Draws an icon in a size x size square from (0, 0), over theme.badgeBg. on alternates every timing.badgeBlinkMs
+// when blinks is true, and is always true otherwise. Define your own Icon to add icons.
+struct Icon {
+  void (*draw)(LovyanGFX& g, int size, bool on);
+  bool blinks;
+};
+
+namespace icons {
+extern const Icon mic;     // listening: theme.iconOn microphone with a blinking theme.iconAlert dot
+extern const Icon micOff;  // not listening: theme.iconOff microphone, struck through
+}  // namespace icons
+
+class Badge {
+ public:
+  // Shows icon. Draws only if it changed or was hidden.
+  void set(const Icon& icon);
+  // Clears the square to theme.screen and lets InfoView and Subtitle draw there again.
+  void hide();
+  bool visible() const { return icon != nullptr; }
+  // Draws again if visible, e.g. after the face drew over it. Pushes a small sprite, cheap to call every frame.
+  void show();
+  // Call from loop(). Redraws a blinking icon when its phase changes.
+  void update();
+
+ private:
+  M5Canvas canvas;
+  const Icon* icon = nullptr;
+  bool phase = true;
+  bool phaseAt(uint32_t now) const;
+  void draw();
 };
 
 namespace events {

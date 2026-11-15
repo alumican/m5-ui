@@ -7,6 +7,7 @@
 
 m5ui::InfoView info;
 m5ui::Subtitle subtitle;
+m5ui::Badge badge;  // top right: mic on / off, toggled every 3 seconds
 m5ui::PinHeader header40, header8;
 m5ui::Terminal terminal;
 m5ui::Typing typing;
@@ -24,6 +25,7 @@ void drawFace(int x, int y, int w, int h) {
   int r = std::max(3, h / 10);
   d.fillCircle(x + w * 3 / 10, y + h * 2 / 5, r, TFT_WHITE);
   d.fillCircle(x + w * 7 / 10, y + h * 2 / 5, r, TFT_WHITE);
+  badge.show();  // the face drew over it
 }
 
 void setupPins() {
@@ -47,9 +49,9 @@ void setupPins() {
   };
   header40.begin(40);
   for (int i = 0; i < 40; i++) header40.setPin(i, String(i + 1), pins[i].name, pins[i].kind);
-  header40.highlight(0, 1);   // 3V3
-  header40.highlight(5, 2);   // GND
-  header40.highlight(10, 3);  // GPIO17
+  header40.highlight(0, 1, "Red wire");     // 3V3
+  header40.highlight(5, 2, "Black wire");   // GND
+  header40.highlight(10, 3, "LED +");       // GPIO17
   header40.setBlink(true);
 
   static const P small[8] = {
@@ -58,13 +60,15 @@ void setupPins() {
   };
   header8.begin(8);
   for (int i = 0; i < 8; i++) header8.setPin(i, String(i + 1), small[i].name, small[i].kind);
-  header8.highlight(2, 1);
-  header8.highlight(3, 2);
+  header8.highlight(2, 1, "Sensor SDA");
+  header8.highlight(3, 2, "Sensor SCL");
 }
 
 void show(int s) {
   screen = s;
   tick = 0;
+  // Subtitles start at the left on the terminal screen, centered elsewhere.
+  m5ui::metrics.subtitleAlign = s == SHOW_TERMINAL ? m5ui::Align::Left : m5ui::Align::Center;
   if (s == SHOW_FACE) {
     info.close();
     drawFace(0, 0, 320, 216);
@@ -105,6 +109,8 @@ static const char* CODE =
 
 void step() {
   tick++;
+  static int micTick = 0;
+  if (++micTick % 30 == 0) badge.set(micTick / 30 % 2 ? m5ui::icons::micOff : m5ui::icons::mic);
   switch (screen) {
     case SHOW_PINS40:
       if (tick % 30 == 0) header40.setRotation(tick / 30 * 90);
@@ -139,6 +145,7 @@ void setup() {
   M5.Display.setRotation(1);
   M5.Display.fillScreen(TFT_BLACK);
   setupPins();
+  badge.set(m5ui::icons::mic);
   if (!info.begin()) Serial.println("m5-ui: out of memory");
   show(SHOW_FACE);
 }
@@ -152,5 +159,6 @@ void loop() {
   }
   info.update();
   subtitle.update();
+  badge.update();
   delay(5);
 }

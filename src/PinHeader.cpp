@@ -1,3 +1,5 @@
+#include <stdio.h>
+
 #include <algorithm>
 
 #include "m5ui_internal.h"
@@ -29,7 +31,7 @@ static void cell(int rot, int r, int c, int len, int& gx, int& gy) {
 
 void PinHeader::begin(int n) {
   n = std::max(2, n + (n & 1));
-  Pin blank = {String(), String(), PinKind::None, 0, false};
+  Pin blank = {String(), String(), String(), PinKind::None, 0, false};
   list.assign(n, blank);
   invalidate();
 }
@@ -49,21 +51,27 @@ void PinHeader::setRotation(int degrees) {
   invalidate();
 }
 
-void PinHeader::highlight(int i, int step) {
+void PinHeader::highlight(int i, int step, const String& note) {
   if (i < 0 || i >= (int)list.size()) return;
   list[i].on = true;
   list[i].step = constrain(step, 0, 255);
+  list[i].note = note;
   invalidate();
 }
 
 void PinHeader::clearHighlights() {
-  for (Pin& p : list) p.on = false, p.step = 0;
+  for (Pin& p : list) p.on = false, p.step = 0, p.note = "";
   invalidate();
 }
 
 void PinHeader::setBlink(bool on) {
   blink = on;
   phase = true;
+  invalidate();
+}
+
+void PinHeader::setLegend(bool on) {
+  legend = on;
   invalidate();
 }
 
@@ -87,6 +95,18 @@ void PinHeader::draw(LovyanGFX& g, int w, int h) {
   for (const Pin& p : list) any = any || p.on;
   auto badgeW = [&](const Pin& p) { return p.step ? g.textWidth(String(p.step)) + 6 + 3 : 0; };
 
+  // Legend at the bottom: the highlighted pins by step, in up to half the height.
+  std::vector<int> marked;
+  for (int i = 0; i < n; i++)
+    if (list[i].on) marked.push_back(i);
+  std::sort(marked.begin(), marked.end(), [&](int a, int b) {
+    int sa = list[a].step ? list[a].step : 256, sb = list[b].step ? list[b].step : 256;
+    return sa != sb ? sa < sb : a < b;
+  });
+  const int lineH = fh + 2;
+  int legendN = legend ? std::min<int>(marked.size(), (h / 2) / lineH) : 0;
+  if (legendN) h -= legendN * lineH + 5;  // the diagram gets the rest
+
   // Spacing along the rows: room for a line of text, and in a horizontal header for each label, which may span
   // two pitches (labels then alternate between a near and a far line). Across the rows: metrics.pinPitch.
   int pitch = std::max<int>(metrics.pinPitch, fh + 2), across = metrics.pinPitch, labelW = 0;
@@ -94,15 +114,29 @@ void PinHeader::draw(LovyanGFX& g, int w, int h) {
     for (const Pin& p : list) labelW = std::max(labelW, (int)g.textWidth(p.name) + badgeW(p));
     pitch = std::min(std::max<int>(metrics.pinPitch, (labelW + 7) / 2), (w - pad * 2) / 3);
   }
-  const bool stagger = !vertical && labelW + 4 > pitch;
+  bool stagger = !vertical && labelW + 4 > pitch;
+  int mapRoom = 0;  // horizontal: height left for the map above the close-up
+  if (!vertical) {
+    if (stagger && pad + metrics.overviewPitch * 2 + 2 + across * 2 + (3 + fh * 2) * 2 > h) {
+      stagger = false;  // no room for two label lines a side: one line, wider pitch
+      pitch = std::min(std::max<int>(metrics.pinPitch, labelW + 4), (w - pad * 2) / 3);
+    }
+    int labelsH = (3 + fh * (stagger ? 2 : 1)) * 2;
+    across = constrain((h - labelsH) / 2, 12, across);  // smaller pins before cutting labels
+    mapRoom = h - labelsH - across * 2;
+  }
   const int cw = vertical ? across : pitch, ch = vertical ? pitch : across;  // cell size
 
   // Rows shown close up; if not all fit, a small map of the whole header goes beside them.
   int along = vertical ? h - pad * 2 : w - pad * 2;
   int len = std::max(1, std::min(rows, along / pitch)), r0 = 0;
-  bool map = len < rows;
-  int dx = 0, dy = 0, dw = w, dh = h, op = 0, ox = 0, oy = 0;
-  if (map) {
+  int op = std::min<int>(metrics.overviewPitch, along / rows);
+  if (vertical) op = std::max(2, op);
+  else op = std::min(op, (mapRoom - 4) / 2);
+  // Without room for the map (a turned header above a long legend), the legend still tells the position.
+  bool map = len < rows && op >= 2;
+  int dx = 0, dy = 0, dw = w, dh = h, ox = 0, oy = 0;
+  if (len < rows) {
     int lo = rows, hi = -1, focus = 0, focusStep = 256;
     for (int i = 0; i < n; i++) {
       if (!list[i].on) continue;
@@ -113,12 +147,13 @@ void PinHeader::draw(LovyanGFX& g, int w, int h) {
     }
     if (hi >= 0) r0 = hi - lo + 1 <= len ? lo - (len - (hi - lo + 1)) / 2 : focus - len / 2;
     r0 = constrain(r0, 0, rows - len);
-    op = std::max(2, std::min<int>(metrics.overviewPitch, along / rows));
+  }
+  if (map) {
     if (vertical) {
       ox = pad, oy = (h - rows * op) / 2;
       dx = ox + op * 2 + pad, dw = w - dx;
     } else {
-      ox = (w - rows * op) / 2, oy = pad;
+      ox = (w - rows * op) / 2, oy = std::min<int>(pad, mapRoom - op * 2 - 2);
       dy = oy + op * 2 + 2, dh = h - dy;
     }
     // Whole header, with a frame around the rows shown close up.
@@ -189,6 +224,52 @@ void PinHeader::draw(LovyanGFX& g, int w, int h) {
       g.setTextDatum(middle_left);
       g.setTextColor(lit ? theme.accent : p.on || !any ? theme.text : theme.dim);
       g.drawString(name, left + bw, ly);
+    }
+  }
+
+  // Legend lines: badge, "number name", position as drawn, note.
+  if (legendN) {
+    int y = h + 2, badgeCol = 0, idCol = 0, placeCol = 0;
+    char place[64];
+    std::vector<String> places;
+    for (int k = 0; k < legendN; k++) {
+      const Pin& p = list[marked[k]];
+      int gx, gy;
+      cell(rotation, marked[k] / 2, marked[k] % 2, rows, gx, gy);
+      if (vertical) snprintf(place, sizeof place, words.rowFrom, gy + 1, gx == 0 ? words.left : words.right);
+      else snprintf(place, sizeof place, words.columnFrom, gx + 1, gy == 0 ? words.top : words.bottom);
+      places.push_back(place);
+      badgeCol = std::max(badgeCol, badgeW(p));
+      idCol = std::max(idCol, (int)g.textWidth(p.number + " " + p.name));
+      placeCol = std::max(placeCol, (int)g.textWidth(places.back()));
+    }
+    idCol = std::min(idCol, w / 3);
+    g.drawFastHLine(pad, y, w - pad * 2, theme.line);
+    y += 3;
+    g.setTextDatum(middle_left);
+    for (int k = 0; k < legendN; k++, y += lineH) {
+      const Pin& p = list[marked[k]];
+      int cy = y + lineH / 2, x = pad;
+      if (p.step) {
+        int bw = badgeW(p) - 3;
+        g.fillRoundRect(x, cy - fh / 2, bw, fh, 3, theme.accent);
+        g.setTextDatum(middle_center);
+        g.setTextColor(detail::ink(theme.accent));
+        g.drawString(String(p.step), x + bw / 2, cy);
+        g.setTextDatum(middle_left);
+      }
+      x += badgeCol;
+      g.setTextColor(theme.text);
+      g.drawString(detail::fit(g, p.number + " " + p.name, idCol), x, cy);
+      x += idCol + 8;
+      int room = w - pad - x;
+      g.setTextColor(theme.dim);
+      g.drawString(detail::fit(g, places[k], room), x, cy);
+      x += std::min(placeCol, room) + 8;
+      if (p.note.length() && x < w - pad) {
+        g.setTextColor(theme.accent);
+        g.drawString(detail::fit(g, p.note, w - pad - x), x, cy);
+      }
     }
   }
   g.setTextDatum(top_left);
