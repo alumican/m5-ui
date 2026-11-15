@@ -24,6 +24,12 @@ struct Theme {
   // Badge and icons
   uint16_t badgeBg = 0x18E3;
   uint16_t iconOn = TFT_WHITE, iconOff = 0x6B4D, iconAlert = 0xF206;
+  // Circuit
+  uint16_t board = 0x1B26, boardPad = 0xE5A6;     // board and its terminals
+  uint16_t wire = 0xFFE0, wirePower = 0xF800, wireGround = TFT_BLACK;  // signal, power, ground
+  uint16_t wireEdge = 0x8410;                      // outline of dark wires
+  uint16_t lead = 0xBDF7;                          // part legs
+  uint16_t led = 0xF800, buttonCap = 0xF800, buzzer = 0x2945, resistor = 0xD5D0, resistorBand = 0x8200;
   // Face: lines and the starting background
   uint16_t face = TFT_WHITE, faceBg = TFT_BLACK;
   // PinHeader kinds
@@ -55,6 +61,8 @@ struct Metrics {
   int16_t pinPitch = 22, overviewPitch = 7;  // PinHeader: pin spacing, and in the small whole-header map
   int16_t dragPx = 8;   // drag distance that starts scrolling in Panel and choose()
   int16_t badgeX = 288, badgeY = 4, badgeSize = 28;  // Badge square, top right by default
+  int16_t wireW = 4;                         // Circuit wire thickness
+  int16_t circuitRowMin = 40, circuitRowMax = 64;  // Circuit loop height; more loops than fit scroll
   int16_t faceMinEye = 4, faceMinLine = 2;  // Face: minimums in screen pixels, so small faces stay readable
 };
 extern Metrics metrics;
@@ -268,6 +276,55 @@ class PinHeader : public Content {
   std::vector<Pin> list;
   int rotation = 0;
   bool blink = false, phase = true, legend = true;
+};
+
+enum class PartKind : uint8_t { Led, Resistor, Button, Buzzer, Box };
+
+// Wiring for beginners: a board on the left and loops beside it, each a series path from a board terminal
+// through parts back to another terminal, drawn as pictures (an LED with its long + leg, a banded resistor, a
+// push button, a buzzer, or a box with a name). Wires are thick and colored per segment. Highlighted loops and
+// parts stand out and may blink. Loops that do not fit scroll to the highlighted one.
+class Circuit : public Content {
+ public:
+  void clear();
+  void setBoard(const String& name);
+  // A loop from terminal "from" (two lines, e.g. "11" and "GPIO17") back to terminal "to" (e.g. "9", "GND").
+  // back: color of the wire into "to". Returns the loop index.
+  int addLoop(const String& fromNumber, const String& fromName, const String& toNumber, const String& toName,
+              uint16_t back = theme.wireGround);
+  // A part at the end of the loop so far. wire: color of the wire into it. label: short text next to it
+  // (inside for Box), e.g. "330 ohm". Returns the part index in the loop.
+  int addPart(int loop, PartKind kind, const String& label, uint16_t wire = theme.wire);
+  // Body color: LED, button cap, buzzer, box. Defaults: theme.led, theme.buttonCap, theme.buzzer, theme.bg.
+  void setPartColor(int loop, int part, uint16_t color);
+  // LED and buzzer: the + leg faces "from" unless reversed.
+  void setReversed(int loop, int part, bool reversed);
+  // part -1: the whole loop.
+  void highlight(int loop, int part = -1);
+  void clearHighlights();
+  void setBlink(bool on);
+
+  void draw(LovyanGFX& g, int w, int h) override;
+  bool animate(uint32_t now) override;
+
+ private:
+  struct Part {
+    PartKind kind;
+    String label;
+    uint16_t wire;
+    int32_t color;  // -1: default for the kind
+    bool reversed, on;
+  };
+  struct Loop {
+    String fromNumber, fromName, toNumber, toName;
+    uint16_t back;
+    bool on;
+    std::vector<Part> parts;
+  };
+  String board;
+  std::vector<Loop> loops;
+  bool blink = false, phase = true;
+  void drawPart(LovyanGFX& g, const Part& p, int cx, int y, int pw, int r, bool lit);
 };
 
 enum class Level : uint8_t { Normal, Warn, Error };

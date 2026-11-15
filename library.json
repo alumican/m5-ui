@@ -1,7 +1,7 @@
 {
   "name": "m5-ui",
-  "version": "0.5.1",
-  "description": "UI components for M5Unified on 320x240 displays: settings panel, popups, event log, info view (pin header, terminal, typing, status list), subtitle, status badge, face, tweens and tokens.",
+  "version": "0.6.0",
+  "description": "UI components for M5Unified on 320x240 displays: settings panel, popups, event log, info view (pin header, circuit, terminal, typing, status list), subtitle, status badge, face, tweens and tokens.",
   "authors": [
     {
       "name": "Yukiya Okuda"

@@ -21,7 +21,7 @@ UI components for M5Unified on 320x240 displays (Core2, CoreS3). Tested with M5U
 
 ```ini
 lib_deps =
-  https://github.com/alumican/m5-ui.git#v0.5.1
+  https://github.com/alumican/m5-ui.git#v0.6.0
 ```
 
 ## Panel
@@ -143,6 +143,7 @@ Contents:
 - **Terminal**: `print(text, Level::Normal / Warn / Error)` adds lines (`'\n'` splits); the last ones that fit are shown, colored by level. `setWrap(false)` cuts long lines instead of wrapping.
 - **Typing**: `setText()` or `append()` the text typed so far and `setProgress(done, total)`. Shows the last lines with a blinking cursor and a "done / total" bar.
 - **StatusList**: `set(name, value, Light)` adds or updates a row with a colored dot. Rows that do not fit go into a second column.
+- **Circuit**: wiring for beginners. A board on the left, and loops beside it, each from a board terminal through parts in series back to another terminal. Parts are pictures: `Led` (dome and two legs, the longer + leg marked), `Resistor` (banded body), `Button`, `Buzzer`, or a `Box` with a name. Wires are thick and colored per segment; dark wires get an outline. Highlight a loop or a part to explain a step.
 - **Your own**: subclass `m5ui::Content`, draw in `draw(LovyanGFX& g, int w, int h)` and call `invalidate()` when it changes. Override `animate(now)` to return true when it should be redrawn as time passes.
 
 `Subtitle::set(text)` draws one line in the band at `metrics.subtitleY`, centered or from the left (`metrics.subtitleAlign = m5ui::Align::Left`, `metrics.pad` from the edge). Text wider than the screen scrolls to its end and back to its start at `timing.subtitleSpeed` (0 cuts it with "..."); call `update()` from `loop()`. `set("")` clears the band.
@@ -150,6 +151,29 @@ Contents:
 For speech that arrives bit by bit, call `set()` with the whole text so far each time: text that continues the current one keeps the scroll where it is. With `metrics.subtitleTail = true`, the newest part stays in view: older text slides out to the left, catching up faster when far behind. Keep the face above the band, or call `show()` after drawing it.
 
 The default fonts are ASCII only. For Japanese, set a font that has it, e.g. `m5ui::metrics.font = &fonts::efontJA_16;`. Text wraps at spaces, or between characters where there are none.
+
+### Circuit
+
+```cpp
+m5ui::Circuit circuit;
+using P = m5ui::PartKind;
+
+circuit.setBoard("40-pin board");
+int led = circuit.addLoop("11", "GPIO17", "9", "GND");  // from terminal, back to terminal (wire into it: black)
+circuit.addPart(led, P::Resistor, "330 ohm");           // wire into it: theme.wire (yellow)
+circuit.addPart(led, P::Led, "LED");                    // its + leg faces "from"
+int btn = circuit.addLoop("1", "3V3", "13", "GPIO27", m5ui::theme.wire);
+circuit.addPart(btn, P::Button, "Button", m5ui::theme.wirePower);  // red wire from 3V3 to the button
+circuit.highlight(led);       // the whole loop; highlight(led, 1) for the LED only
+circuit.setBlink(true);
+info.open("Wiring", &circuit);
+```
+
+- `addLoop(fromNumber, fromName, toNumber, toName, back)`: `back` is the color of the wire into "to" (default `theme.wireGround`). Terminal labels show on two lines when there is room.
+- `addPart(loop, kind, label, wire)`: in order from "from" to "to"; `wire` is the color of the wire into the part. `setPartColor()` colors an LED, a button cap, a buzzer or a box; `setReversed()` turns an LED or buzzer so its + leg faces "to".
+- 1 to 3 loops fit in the default content area; parts grow with the room (`metrics.circuitRowMin`, `circuitRowMax`). More loops scroll to the highlighted one, with arrows.
+- Labels use `metrics.smallFont` (ASCII); write "330 ohm" rather than the ohm sign unless your font has it.
+- Colors: `theme.board`, `boardPad`, `wire`, `wirePower`, `wireGround`, `wireEdge`, `lead`, `led`, `buttonCap`, `buzzer`, `resistor`, `resistorBand`. Thickness: `metrics.wireW`. Blink: `timing.blinkMs`.
 
 ## Face
 

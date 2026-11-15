@@ -16,8 +16,9 @@ m5ui::PinHeader header40, header8;
 m5ui::Terminal terminal;
 m5ui::Typing typing;
 m5ui::StatusList status;
+m5ui::Circuit circuit;
 
-enum Screen { SHOW_FACE, SHOW_PINS40, SHOW_PINS8, SHOW_TERMINAL, SHOW_TYPING, SHOW_STATUS, SHOW_COUNT };
+enum Screen { SHOW_FACE, SHOW_PINS40, SHOW_PINS8, SHOW_CIRCUIT, SHOW_TERMINAL, SHOW_TYPING, SHOW_STATUS, SHOW_COUNT };
 int screen = SHOW_FACE;
 uint32_t lastStep = 0;
 int tick = 0;
@@ -67,6 +68,23 @@ void setupPins() {
   header8.highlight(3, 2, "Sensor SCL");
 }
 
+// Three loops: an LED with its resistor, a button, three LEDs in a row.
+void setupCircuit() {
+  using P = m5ui::PartKind;
+  circuit.setBoard("40-pin board");
+  int a = circuit.addLoop("11", "GPIO17", "9", "GND");
+  circuit.addPart(a, P::Resistor, "330 ohm");
+  circuit.addPart(a, P::Led, "LED");
+  int b = circuit.addLoop("13", "GPIO27", "14", "GND");
+  circuit.addPart(b, P::Button, "Button");
+  int c = circuit.addLoop("15", "GPIO22", "20", "GND");
+  circuit.addPart(c, P::Resistor, "100 ohm");
+  const uint16_t colors[] = {0xF800, 0xFFE0, 0x07E0};
+  const char* names[] = {"Red", "Yellow", "Green"};
+  for (int i = 0; i < 3; i++) circuit.setPartColor(c, circuit.addPart(c, P::Led, names[i]), colors[i]);
+  circuit.setBlink(true);
+}
+
 void show(int s) {
   screen = s;
   tick = 0;
@@ -89,6 +107,10 @@ void show(int s) {
     case SHOW_PINS8:
       info.open("8-pin header", &header8);
       subtitle.set("Small headers fit whole.");
+      break;
+    case SHOW_CIRCUIT:
+      info.open("Wiring", &circuit);
+      subtitle.set("Each loop goes from a pin, through the parts, back to GND.");
       break;
     case SHOW_TERMINAL:
       terminal.clear();
@@ -138,6 +160,14 @@ void step() {
       subtitle.set(String(SPEECH).substring(0, std::min(n, len)));
       break;
     }
+    case SHOW_CIRCUIT:  // steps: each loop, then the LED of the first one
+      if (tick % 20 == 1) {
+        int k = tick / 20 % 4;
+        circuit.clearHighlights();
+        if (k < 3) circuit.highlight(k);
+        else circuit.highlight(0, 1);
+      }
+      break;
     case SHOW_PINS40:
       if (tick % 30 == 0) header40.setRotation(tick / 30 * 90);
       break;
@@ -171,6 +201,7 @@ void setup() {
   M5.Display.setRotation(1);
   M5.Display.fillScreen(TFT_BLACK);
   setupPins();
+  setupCircuit();
   bigFace.begin(0, 0, 320, 240);  // the subtitle band and the badge stay on top
   smallFace.begin(m5ui::metrics.infoX, m5ui::metrics.infoY, m5ui::metrics.cornerW, m5ui::metrics.cornerH);
   smallFace.setLayout(m5ui::FaceLayout::compact());
