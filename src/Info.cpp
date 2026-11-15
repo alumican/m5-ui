@@ -268,34 +268,65 @@ void StatusList::draw(LovyanGFX& g, int w, int h) {
 
 bool Subtitle::ready() { return makeSprite(canvas, M5.Display.width(), metrics.subtitleH); }
 
+enum { HOLD_START, SCROLL, HOLD_END };
+
+int Subtitle::over() const { return std::max(0, textW - (canvas.width() - metrics.pad * 2)); }
+
 void Subtitle::set(const String& text) {
   if (text == txt && canvas.getBuffer()) return;
   if (!ready()) return;
+  bool more = txt.length() && text.length() > txt.length() && text.startsWith(txt);
   txt = text;
   canvas.setFont(metrics.font);
   textW = canvas.textWidth(txt);
-  startedAt = millis();
-  draw(0);
+  uint32_t now = millis();
+  if (!more) {  // a new text: from its start, or at its end when keeping the end in view
+    pos = metrics.subtitleTail ? over() : 0;
+    phase = HOLD_START;
+    phaseAt = now;
+  } else if (phase == HOLD_END && over() > pos) {  // more to scroll: go on from here
+    phase = SCROLL;
+  }
+  lastAt = now;
+  draw((int)pos);
 }
 
-int Subtitle::offset(uint32_t now) const {
-  int over = textW - (canvas.width() - metrics.pad * 2);
-  if (over <= 0 || !timing.subtitleSpeed) return 0;
-  uint32_t hold = timing.subtitleHoldMs, move = (uint32_t)over * 1000 / timing.subtitleSpeed;
-  uint32_t t = (now - startedAt) % (hold * 2 + move);
-  if (t < hold) return 0;
-  if (t < hold + move) return (t - hold) * timing.subtitleSpeed / 1000;
-  return over;
+void Subtitle::advance(uint32_t now) {
+  float dt = now - lastAt, speed = timing.subtitleSpeed;
+  lastAt = now;
+  int o = over();
+  if (!o) {
+    pos = 0;
+    return;
+  }
+  if (metrics.subtitleTail) {  // chase the end: at least the speed, faster when far behind
+    float step = speed ? std::max(speed * dt / 1000, (o - pos) * std::min(1.0f, dt / 150)) : o;
+    pos = std::min((float)o, pos + step);
+    return;
+  }
+  if (!speed) {
+    pos = 0;
+    return;
+  }
+  uint32_t hold = timing.subtitleHoldMs;
+  if (phase == HOLD_START && now - phaseAt >= hold) {
+    phase = SCROLL;
+  } else if (phase == SCROLL) {
+    pos += speed * dt / 1000;
+    if (pos >= o) pos = o, phase = HOLD_END, phaseAt = now;
+  } else if (phase == HOLD_END && now - phaseAt >= hold) {
+    pos = 0, phase = HOLD_START, phaseAt = now;
+  }
 }
 
 void Subtitle::update() {
   if (!canvas.getBuffer() || !txt.length()) return;
-  int o = offset(millis());
-  if (o != drawnOffset) draw(o);
+  advance(millis());
+  if ((int)pos != drawnOffset) draw((int)pos);
 }
 
 void Subtitle::show() {
-  if (ready()) draw(offset(millis()));
+  if (ready()) draw((int)pos);
 }
 
 void Subtitle::draw(int off) {
@@ -311,7 +342,7 @@ void Subtitle::draw(int off) {
     } else if (textW <= avail) {
       canvas.setTextDatum(middle_left);
       canvas.drawString(txt, pad, h / 2);
-    } else if (!timing.subtitleSpeed) {
+    } else if (!timing.subtitleSpeed && !metrics.subtitleTail) {
       canvas.setTextDatum(middle_left);
       canvas.drawString(fit(canvas, txt, avail), pad, h / 2);
     } else {

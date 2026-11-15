@@ -70,12 +70,14 @@ void setupPins() {
 void show(int s) {
   screen = s;
   tick = 0;
-  // Subtitles start at the left on the terminal screen, centered elsewhere.
-  m5ui::metrics.subtitleAlign = s == SHOW_TERMINAL ? m5ui::Align::Left : m5ui::Align::Center;
+  // Subtitles start at the left on the terminal screen, centered elsewhere. On the face screen, speech arrives
+  // a few characters at a time and the subtitle keeps its newest part in view.
+  m5ui::metrics.subtitleAlign = s == SHOW_TERMINAL || s == SHOW_FACE ? m5ui::Align::Left : m5ui::Align::Center;
+  m5ui::metrics.subtitleTail = s == SHOW_FACE;
   if (s == SHOW_FACE) {
     info.close();
     bigFace.show();
-    subtitle.set("Tap for the next screen.");
+    subtitle.set("");
     return;
   }
   smallFace.show();
@@ -128,6 +130,14 @@ void step() {
   static int micTick = 0;
   if (++micTick % 30 == 0) badge.set(micTick / 30 % 2 ? m5ui::icons::micOff : m5ui::icons::mic);
   switch (screen) {
+    case SHOW_FACE: {  // speech arriving: 3 characters every 100 ms, then a pause
+      static const char* SPEECH =
+          "Hello! This is a face drawn by m5-ui. Tap the screen to see the info views, one at a time, "
+          "with the same face in the corner. ";
+      int n = tick % 60 * 3, len = strlen(SPEECH);
+      subtitle.set(String(SPEECH).substring(0, std::min(n, len)));
+      break;
+    }
     case SHOW_PINS40:
       if (tick % 30 == 0) header40.setRotation(tick / 30 * 90);
       break;

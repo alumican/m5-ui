@@ -21,7 +21,7 @@ UI components for M5Unified on 320x240 displays (Core2, CoreS3). Tested with M5U
 
 ```ini
 lib_deps =
-  https://github.com/alumican/m5-ui.git#v0.5.0
+  https://github.com/alumican/m5-ui.git#v0.5.1
 ```
 
 ## Panel
@@ -145,7 +145,9 @@ Contents:
 - **StatusList**: `set(name, value, Light)` adds or updates a row with a colored dot. Rows that do not fit go into a second column.
 - **Your own**: subclass `m5ui::Content`, draw in `draw(LovyanGFX& g, int w, int h)` and call `invalidate()` when it changes. Override `animate(now)` to return true when it should be redrawn as time passes.
 
-`Subtitle::set(text)` draws one line in the band at `metrics.subtitleY`, centered or from the left (`metrics.subtitleAlign = m5ui::Align::Left`, `metrics.pad` from the edge). Text wider than the screen scrolls back and forth at `timing.subtitleSpeed` (0 cuts it with "..."); call `update()` from `loop()`. `set("")` clears the band. Keep the face above the band, or call `show()` after drawing it.
+`Subtitle::set(text)` draws one line in the band at `metrics.subtitleY`, centered or from the left (`metrics.subtitleAlign = m5ui::Align::Left`, `metrics.pad` from the edge). Text wider than the screen scrolls to its end and back to its start at `timing.subtitleSpeed` (0 cuts it with "..."); call `update()` from `loop()`. `set("")` clears the band.
+
+For speech that arrives bit by bit, call `set()` with the whole text so far each time: text that continues the current one keeps the scroll where it is. With `metrics.subtitleTail = true`, the newest part stays in view: older text slides out to the left, catching up faster when far behind. Keep the face above the band, or call `show()` after drawing it.
 
 The default fonts are ASCII only. For Japanese, set a font that has it, e.g. `m5ui::metrics.font = &fonts::efontJA_16;`. Text wraps at spaces, or between characters where there are none.
 

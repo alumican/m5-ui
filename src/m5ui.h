@@ -47,6 +47,9 @@ struct Metrics {
   int16_t titleH = 28;  // title band height when there is no corner
   int16_t subtitleY = 216, subtitleH = 24;
   Align subtitleAlign = Align::Center;  // Left: starts metrics.pad from the left edge
+  // Subtitle wider than the screen. false: scrolls to its end and back to its start. true: keeps its end in
+  // view, older text sliding out to the left as text is added (e.g. speech arriving bit by bit).
+  bool subtitleTail = false;
   int16_t lineGap = 2;  // between text lines in Terminal and Typing
   int16_t rowH = 22;    // StatusList row
   int16_t pinPitch = 22, overviewPitch = 7;  // PinHeader: pin spacing, and in the small whole-header map
@@ -61,6 +64,7 @@ struct Timing {
   uint16_t blinkMs = 500;          // PinHeader highlight blink, each phase
   uint16_t cursorMs = 500;         // Typing cursor blink, each phase
   uint16_t subtitleSpeed = 60;     // px per second for a subtitle wider than the screen; 0 cuts it with "..."
+                                   // (with metrics.subtitleTail, 0 jumps to the end)
   uint16_t subtitleHoldMs = 1500;  // pause at both ends of a subtitle scroll
   uint16_t repeatAfterMs = 400, repeatEveryMs = 120;  // adjust() hold-to-repeat
   uint16_t faceFrameMs = 33;                         // Face: at most one frame per this
@@ -330,10 +334,11 @@ class StatusList : public Content {
 };
 
 // One line of text in a band at the bottom of the screen (metrics.subtitle*), over the face or an InfoView.
-// Text wider than the screen scrolls (timing.subtitle*). Call update() from loop().
+// Text wider than the screen scrolls (timing.subtitle*, metrics.subtitleTail). Call update() from loop().
 class Subtitle {
  public:
   // Draws text, aligned by metrics.subtitleAlign. Empty text clears the band to theme.subtitleBg.
+  // Text that continues the current one (starts with it) keeps the scroll where it is and extends it.
   void set(const String& text);
   void clear() { set(""); }
   const String& text() const { return txt; }
@@ -346,9 +351,12 @@ class Subtitle {
   M5Canvas canvas;
   String txt;
   int textW = 0, drawnOffset = -1;
-  uint32_t startedAt = 0;
+  float pos = 0;          // scroll offset in px
+  uint8_t phase = 0;      // scroll: hold at the start, move, hold at the end
+  uint32_t phaseAt = 0, lastAt = 0;
   bool ready();
-  int offset(uint32_t now) const;
+  int over() const;
+  void advance(uint32_t now);
   void draw(int offset);
 };
 
