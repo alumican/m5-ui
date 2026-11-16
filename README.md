@@ -17,6 +17,16 @@ UI components for M5Unified on 320x240 displays (Core2, CoreS3). Tested with M5U
 
 `examples/Showcase` shows them all (`pio run` in that folder).
 
+## Screens
+
+| | | |
+|:-:|:-:|:-:|
+| <img src="docs/screenshots/face.png" width="240" alt="Face"><br>Face | <img src="docs/screenshots/eyes.png" width="240" alt="Eyes"><br>Eyes | <img src="docs/screenshots/panel.png" width="240" alt="Panel"><br>Panel |
+| <img src="docs/screenshots/pins40.png" width="240" alt="PinHeader, 40 pins"><br>PinHeader, 40 pins | <img src="docs/screenshots/pins8.png" width="240" alt="PinHeader, 8 pins"><br>PinHeader, 8 pins | <img src="docs/screenshots/circuit.png" width="240" alt="Circuit"><br>Circuit |
+| <img src="docs/screenshots/terminal.png" width="240" alt="Terminal"><br>Terminal | <img src="docs/screenshots/typing.png" width="240" alt="Typing"><br>Typing | <img src="docs/screenshots/status.png" width="240" alt="StatusList"><br>StatusList |
+| <img src="docs/screenshots/confirm.png" width="240" alt="confirm()"><br>confirm() | <img src="docs/screenshots/adjust.png" width="240" alt="adjust()"><br>adjust() | <img src="docs/screenshots/choose.png" width="240" alt="choose()"><br>choose() |
+| <img src="docs/screenshots/progress.png" width="240" alt="Progress"><br>Progress |  |  |
+
 ## Install
 
 ```ini
@@ -313,6 +323,18 @@ cd tests
 pio test                                        # build, upload and run
 pio test --without-uploading --without-testing  # build only
 ```
+
+## Screenshots
+
+`tools/screenshots`: firmware that draws each screen above, still, and sends it as a PNG over USB serial, and the
+script that saves them to `docs/screenshots`. Add a screen to `SCREENS` and `draw()` in its `src/main.cpp`.
+
+```sh
+pio run -d tools/screenshots -t upload
+python3 tools/screenshots/capture.py            # every screen; or name some, e.g. face eyes
+```
+
+The script needs pyserial, which PlatformIO's Python has.
 
 ## License
 
