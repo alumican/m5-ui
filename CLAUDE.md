@@ -10,4 +10,5 @@ UI components and design tokens for M5Unified on 320x240 displays. Usage: `READM
 - English only, everywhere in this repository: code, comments, docs, commit messages, tags, issues and pull requests. Keep it concise and ASCII only.
 - Public repository. Do not mention other projects, local paths or machine names.
 - The name is `m5-ui`. `m5ui` is used only where an identifier is needed (namespace, header).
+- Logic that can be checked without looking at the screen gets Unity tests in `tests/`. Before a release, at least build them (`pio test --without-uploading --without-testing` in `tests/`).
 - Target: CoreS3, PlatformIO espressif32@6.9.0 (Arduino 2.0.17), M5Unified 0.2.29, M5GFX 0.2.36, C++11.

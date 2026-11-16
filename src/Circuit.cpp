@@ -52,9 +52,7 @@ void Circuit::setResistor(int loop, int part, float ohms, float tolerance) {
   invalidate();
 }
 
-// 4-band code: indexes into theme.bands for two digits, multiplier and tolerance (-1: no band). False if the
-// value cannot be coded (0, negative, or beyond white x 10^9).
-static bool colorCode(float ohms, float tolerance, int out[4]) {
+bool detail::colorCode(float ohms, float tolerance, int out[4]) {
   if (!(ohms > 0)) return false;
   int e = (int)floorf(log10f(ohms)) - 1;  // ohms = dd x 10^e
   long dd = lroundf(ohms / powf(10, e));
@@ -161,7 +159,7 @@ void Circuit::drawPart(LovyanGFX& g, const Part& p, int cx, int y, int pw, int r
       if (lit) g.fillRoundRect(cx - bw / 2 - 3, y - bh / 2 - 3, bw + 6, bh + 6, bh / 2 + 3, theme.accent);
       g.fillRoundRect(cx - bw / 2, y - bh / 2, bw, bh, bh / 2, theme.resistor);
       int code[4];
-      if (!colorCode(p.ohms, p.tolerance, code)) {  // decorative
+      if (!detail::colorCode(p.ohms, p.tolerance, code)) {  // decorative
         for (int k = 0; k < 3; k++)
           g.fillRect(cx - bw / 4 + k * bw / 6 - 1, y - bh / 2, std::max(2, bw / 12), bh, theme.resistorBand);
         break;

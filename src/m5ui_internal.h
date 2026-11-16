@@ -16,6 +16,9 @@ void wrap(LovyanGFX& g, const String& text, int w, std::vector<String>& out);
 String fit(LovyanGFX& g, const String& text, int w);
 // Bytes in the UTF-8 character that starts with c.
 int charLen(uint8_t c);
+// Resistor 4-band code: indexes into theme.bands for two digits, multiplier and tolerance (-1: no band). False if
+// the value cannot be coded (not above 0, below 0.1 ohm, or beyond white x 10^9).
+bool colorCode(float ohms, float tolerancePercent, int out[4]);
 struct Area {
   int x, y, w, h;
 };

@@ -304,6 +304,16 @@ m5ui::words.rowFrom = "row %d from top (%s)";  // printf: number, then side (wor
 m5ui::events::add("wifi: ok %s", ip);  // stored as "12:34:56 wifi: ok ...", or "+123s ..." before the clock is set
 ```
 
+## Tests
+
+`tests`: Unity tests that run on a connected CoreS3. They cover the logic: easing, color mixing, Tween, the resistor color code, text wrapping and cutting, and events. Screens are checked by hand with `examples/Showcase`.
+
+```sh
+cd tests
+pio test                                        # build, upload and run
+pio test --without-uploading --without-testing  # build only
+```
+
 ## License
 
 MIT
