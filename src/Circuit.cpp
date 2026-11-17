@@ -230,13 +230,14 @@ void Circuit::draw(LovyanGFX& g, int w, int h) {
     g.setTextColor(theme.text);
     g.setTextDatum(top_left);
     g.drawString(detail::fit(g, board, w - pad * 2), pad, 0);
-    top = g.fontHeight() + 2;
+    top = g.fontHeight() + 4;  // a little room above the board
   }
   if (!n) return;
 
   // Rows: as tall as fits between the limits; more loops than fit show a window around the highlighted one.
-  int rowH = constrain((h - top) / n, (int)metrics.circuitRowMin, (int)metrics.circuitRowMax);
-  int fit = std::max(1, (h - top) / rowH), r0 = 0;
+  const int rowsRoom = h - top - 3;  // and below it
+  int rowH = constrain(rowsRoom / n, (int)metrics.circuitRowMin, (int)metrics.circuitRowMax);
+  int fit = std::max(1, rowsRoom / rowH), r0 = 0;
   if (fit < n) {
     int focus = -1;
     for (int i = 0; i < n && focus < 0; i++) {

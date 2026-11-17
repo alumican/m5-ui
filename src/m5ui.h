@@ -57,6 +57,7 @@ struct Metrics {
   int16_t infoX = 0, infoY = 0, infoW = 320, infoH = 216;
   int16_t cornerW = 96, cornerH = 72;
   int16_t titleH = 28;  // title band height when there is no corner
+  int16_t infoGap = 5;  // space between the title band's line and the content
   int16_t subtitleY = 216, subtitleH = 24;
   Align subtitleAlign = Align::Center;  // Left: starts metrics.pad from the left edge
   // Subtitle wider than the screen. false: scrolls to its end and back to its start. true: keeps its end in
@@ -68,7 +69,7 @@ struct Metrics {
   int16_t dragPx = 8;   // drag distance that starts scrolling in Panel and choose()
   int16_t badgeX = 288, badgeY = 4, badgeSize = 28;  // Badge square, top right by default
   int16_t wireW = 4;                         // Circuit wire thickness
-  int16_t circuitRowMin = 40, circuitRowMax = 64;  // Circuit loop height; more loops than fit scroll
+  int16_t circuitRowMin = 36, circuitRowMax = 64;  // Circuit loop height; more loops than fit scroll
   // Breadboard: view angle (degrees down from level), zoom limits and the zoom where every label shows, in
   // pixels per hole pitch.
   int16_t bbPitchDeg = 55, bbFocusPx = 18, bbMaxPx = 40, bbLabelPx = 13;
@@ -277,11 +278,11 @@ class InfoView {
   void update();
   // Draws again, e.g. after something else drew over the view.
   void show();
-  // Content position on screen and size.
+  // Content position on screen and size (below the gap under the title band).
   int contentX() const { return bodyX; }
-  int contentY() const { return bodyY; }
+  int contentY() const { return bodyY + gap(); }
   int width() const { return body.width(); }
-  int height() const { return body.height(); }
+  int height() const { return body.height() - gap(); }
 
  private:
   M5Canvas head, body;
@@ -292,6 +293,10 @@ class InfoView {
   int headX = 0, headY = 0, bodyX = 0, bodyY = 0;
   void drawHead();
   void drawBody();
+  int gap() const {
+    int g = metrics.infoGap, most = body.height() - 1;
+    return g < 0 || most < 0 ? 0 : g > most ? most : g;
+  }
 };
 
 // A Content in a rect on screen without a title, e.g. full screen. Same drawing rules as InfoView.

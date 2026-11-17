@@ -31,7 +31,7 @@ UI components for M5Unified on 320x240 displays (Core2, CoreS3). Tested with M5U
 
 ```ini
 lib_deps =
-  https://github.com/alumican/m5-ui.git#v0.8.0
+  https://github.com/alumican/m5-ui.git#v0.8.1
 ```
 
 ## Panel
@@ -145,6 +145,7 @@ void loop() {
 
 - `open(title, content)` draws; `setTitle()` and `setContent()` change what is shown; `close()` draws nothing, so redraw your face afterwards.
 - After drawing over the view, call `show()`. Same for `Subtitle`.
+- The content starts `metrics.infoGap` below the title band's line; `contentX()`, `contentY()`, `width()` and `height()` give its place and size.
 - Contents may be changed at any time, open or not. Changes show at the next `update()`.
 
 Contents:

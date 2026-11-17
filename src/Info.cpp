@@ -85,7 +85,13 @@ void InfoView::drawBody() {
   body.setFont(metrics.font);
   body.setTextColor(theme.text);
   body.setTextDatum(top_left);
-  if (content) content->draw(body, body.width(), body.height());
+  // The content draws from the top, then moves down below the gap under the title band's line.
+  const int g = gap();
+  if (content) content->draw(body, body.width(), body.height() - g);
+  if (g) {
+    body.setBaseColor(theme.screen);
+    body.scroll(0, g);
+  }
   detail::push(body, bodyX, bodyY);
 }
 
