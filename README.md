@@ -31,7 +31,7 @@ UI components for M5Unified on 320x240 displays (Core2, CoreS3). Tested with M5U
 
 ```ini
 lib_deps =
-  https://github.com/alumican/m5-ui.git#v0.6.1
+  https://github.com/alumican/m5-ui.git#v0.7.0
 ```
 
 ## Panel
@@ -154,6 +154,7 @@ Contents:
 - **Typing**: `setText()` or `append()` the text typed so far and `setProgress(done, total)`. Shows the last lines with a blinking cursor and a "done / total" bar.
 - **StatusList**: `set(name, value, Light)` adds or updates a row with a colored dot. Rows that do not fit go into a second column.
 - **Circuit**: wiring for beginners. A board on the left, and loops beside it, each from a board terminal through parts in series back to another terminal. Parts are pictures: `Led` (dome and two legs, the longer + leg marked), `Resistor` (banded body), `Button`, `Buzzer`, or a `Box` with a name. Wires are thick and colored per segment; dark wires get an outline. Highlight a loop or a part to explain a step.
+- **Breadboard**: a breadboard in 3D with a board's pin header beside it, parts and wires, and the step to do now lit. Turn it with a finger, zoom with two (zooming in moves toward the step), double tap or the button for whole view / step.
 - **Your own**: subclass `m5ui::Content`, draw in `draw(LovyanGFX& g, int w, int h)` and call `invalidate()` when it changes. Override `animate(now)` to return true when it should be redrawn as time passes.
 
 `Subtitle::set(text)` draws one line in the band at `metrics.subtitleY`, centered or from the left (`metrics.subtitleAlign = m5ui::Align::Left`, `metrics.pad` from the edge). Text wider than the screen scrolls to its end and back to its start at `timing.subtitleSpeed` (0 cuts it with "..."); call `update()` from `loop()`. `set("")` clears the band.
@@ -186,6 +187,37 @@ info.open("Wiring", &circuit);
 - 1 to 3 loops fit in the default content area; parts grow with the room (`metrics.circuitRowMin`, `circuitRowMax`). More loops scroll to the highlighted one, with arrows.
 - Labels use `metrics.smallFont` (ASCII); write "330 ohm" rather than the ohm sign unless your font has it.
 - Colors: `theme.board`, `boardPad`, `wire`, `wirePower`, `wireGround`, `wireEdge`, `lead`, `led`, `buttonCap`, `buzzer`, `resistor`, `resistorBand`, `bands`. Thickness: `metrics.wireW`. Blink: `timing.blinkMs`.
+
+### Breadboard
+
+```cpp
+m5ui::Breadboard bb;
+using P = m5ui::PartKind;
+
+bb.setBoard("40-pin board", 40);                 // a 2 x 20 header left of the breadboard, pin 1 at the far end
+bb.setPin(11, "GPIO17");                         // names for the physical pins
+bb.addWire("W1", "pin:11", "10a", m5ui::colorByName("yellow"));
+bb.setResistor(bb.addPart("R1", P::Resistor, "10e", "14e", "330 ohm"), 330);
+bb.setPartColor(bb.addPart("D1", P::Led, "14c", "15c"), m5ui::colorByName("red"));  // LED: long leg (+) first
+bb.addWire("W2", "15a", "-:15", m5ui::colorByName("black"));
+for (const char* id : {"W1", "R1", "D1", "W2"}) bb.addStep(id);
+bb.setStep(0);
+info.open("Breadboard", &bb);
+
+void loop() {
+  M5.update();
+  bb.touch(info.contentX(), info.contentY());  // drag, pinch, double tap, the zoom button
+  info.update();
+}
+```
+
+- Places: holes `"10e"` (column 10, row e; a-e and f-j across the groove), rails `"+:16"` / `"-:16"` (past row j; `"+a:16"` / `"-a:16"` past row a), header pins `"pin:11"`.
+- `setStep(i)` lights item `i` of the steps and the holes or pins it goes into, with their names, blinking; done steps are a little dim, later ones dimmer. `-1`: none.
+- `showAll()`, `showStep()`, `setAngles(yaw, pitch)`. Zooming in by pinch slides toward the step; `metrics.bbFocusPx` sets how close `showStep()` goes.
+- Pins that wires use are always labeled; every pin when zoomed in past `metrics.bbLabelPx`.
+- Full screen: put it in a `m5ui::View` (`begin(0, 0, 320, 240)`, `setContent(&bb)`, `update()`), and pass `view.x()`, `view.y()` to `touch()`.
+- Colors: `theme.bbBody`, `bbHole`, `bbGroove`, `bbPlus`, `bbMinus`, `header`, and the Circuit part colors. `m5ui::colorByName()` maps "yellow", "black", ... to `theme.bands`.
+- Cost: it redraws only while something moves or blinks. Each frame draws about 400 holes, the parts and the wires into the content sprite (320 x 140, 88 KB in PSRAM, or 150 KB full screen in a `View`). The Showcase prints frames per second to Serial on this screen.
 
 ## Face
 

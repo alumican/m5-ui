@@ -32,6 +32,9 @@ struct Theme {
   uint16_t led = 0xF800, buttonCap = 0xF800, buzzer = 0x2945, resistor = 0xD5D0, resistorBand = 0x8200;
   // Resistor color code: black, brown, red, orange, yellow, green, blue, violet, gray, white, gold, silver
   uint16_t bands[12] = {0x0000, 0x8A22, 0xE000, 0xFC00, 0xFFE0, 0x0560, 0x001F, 0x901A, 0x7BEF, 0xFFFF, 0xA460, 0x8C71};
+  // Breadboard
+  uint16_t bbBody = 0xE71C, bbHole = 0x4A69, bbGroove = 0xBDF7, bbPlus = 0xF800, bbMinus = 0x041F;
+  uint16_t header = 0x2104;  // plastic of the pin header; pins use boardPad, its board uses board
   // Face: lines and the starting background
   uint16_t face = TFT_WHITE, faceBg = TFT_BLACK;
   // PinHeader kinds
@@ -65,6 +68,9 @@ struct Metrics {
   int16_t badgeX = 288, badgeY = 4, badgeSize = 28;  // Badge square, top right by default
   int16_t wireW = 4;                         // Circuit wire thickness
   int16_t circuitRowMin = 40, circuitRowMax = 64;  // Circuit loop height; more loops than fit scroll
+  // Breadboard: view angle (degrees down from level), zoom limits and the zoom where every label shows, in
+  // pixels per hole pitch.
+  int16_t bbPitchDeg = 55, bbFocusPx = 18, bbMaxPx = 40, bbLabelPx = 13;
   int16_t faceMinEye = 4, faceMinLine = 2;  // Face: minimums in screen pixels, so small faces stay readable
 };
 extern Metrics metrics;
@@ -82,6 +88,8 @@ struct Timing {
   uint16_t blinkClosedMs = 150;
   uint16_t gazeEveryMs = 1500, gazeRandomMs = 2500;    // Face: time between looks when looking around
   uint16_t breathMs = 3300;                           // Face: one breath, up and down
+  uint16_t viewMoveMs = 400;       // Breadboard: camera move between the whole view and the step
+  uint16_t doubleTapMs = 350;      // Breadboard: second tap within this toggles the view
   uint16_t badgeBlinkMs = 600;     // blinking part of an icon (e.g. the dot of icons::mic), each phase; 0 keeps it on
 };
 extern Timing timing;
@@ -185,6 +193,42 @@ class Progress {
   bool onCancel(int x, int y) const;
 };
 
+// ---- Animation ----
+// Easing curves map 0..1 to 0..1. Tween turns time into an eased 0..1; mix() blends colors with it.
+
+using Ease = float (*)(float t);
+namespace ease {
+float linear(float t);
+float inOut(float t);  // smoothstep
+float inQuad(float t);
+float outQuad(float t);
+float inOutQuad(float t);
+float inCubic(float t);
+float outCubic(float t);
+float inOutCubic(float t);
+}  // namespace ease
+
+// Colors from a to b at t (0..1).
+uint16_t mix565(uint16_t a, uint16_t b, float t);
+uint32_t mix888(uint32_t a, uint32_t b, float t);  // 0xRRGGBB
+inline float mix(float a, float b, float t) { return a + (b - a) * t; }
+
+class Tween {
+ public:
+  // Starts from 0 at now, reaching 1 after ms.
+  void start(uint32_t ms, Ease curve = ease::inOut) { start(ms, curve, millis()); }
+  void start(uint32_t ms, Ease curve, uint32_t now);
+  // Eased 0..1 at now. 1 once finished, and before any start().
+  float value() const { return value(millis()); }
+  float value(uint32_t now) const;
+  bool running() const { return running(millis()); }
+  bool running(uint32_t now) const { return ms && now - startedAt < ms; }
+
+ private:
+  uint32_t startedAt = 0, ms = 0;
+  Ease curve = nullptr;
+};
+
 // Words drawn by components. Set them for another language (with a font that has it, see metrics.font).
 struct Words {
   const char* rowFrom = "row %d from top, %s";         // PinHeader legend, upright header: row, side
@@ -210,6 +254,7 @@ class Content {
 
  private:
   friend class InfoView;
+  friend class View;
   bool dirty = true;
 };
 
@@ -228,7 +273,9 @@ class InfoView {
   void update();
   // Draws again, e.g. after something else drew over the view.
   void show();
-  // Content size.
+  // Content position on screen and size.
+  int contentX() const { return bodyX; }
+  int contentY() const { return bodyY; }
   int width() const { return body.width(); }
   int height() const { return body.height(); }
 
@@ -242,6 +289,34 @@ class InfoView {
   void drawHead();
   void drawBody();
 };
+
+// A Content in a rect on screen without a title, e.g. full screen. Same drawing rules as InfoView.
+class View {
+ public:
+  // Allocates a w x h sprite. False if out of memory.
+  bool begin(int x, int y, int w, int h);
+  void setContent(Content* content);
+  void close() { opened = false; }
+  bool isOpen() const { return opened; }
+  // Call from loop(). Redraws when the content changed or moves.
+  void update();
+  void show();
+  int x() const { return vx; }
+  int y() const { return vy; }
+  int width() const { return canvas.width(); }
+  int height() const { return canvas.height(); }
+
+ private:
+  M5Canvas canvas;
+  Content* content = nullptr;
+  int vx = 0, vy = 0;
+  bool opened = false, dirty = true;
+  uint32_t damageSeen = 0;
+};
+
+// Common color names to RGB565, for scenes described in text: black, brown, red, orange, yellow, green, blue,
+// violet (purple), gray (grey), white (from theme.bands), and fallback for anything else.
+uint16_t colorByName(const String& name, uint16_t fallback = TFT_WHITE);
 
 enum class PinKind : uint8_t { None, Power, Ground, Gpio, I2c, Spi, Uart, Other };
 
@@ -335,6 +410,83 @@ class Circuit : public Content {
   void drawPart(LovyanGFX& g, const Part& p, int cx, int y, int pw, int r, bool lit);
 };
 
+// A breadboard in 3D, seen from above at an angle, with a board's pin header beside it, parts and wires, and
+// the step to do now lit and blinking. One finger turns it, two fingers zoom (zooming in moves toward the
+// step), a double tap or the button at the bottom right switches between the whole view and the step.
+// Places: holes "10e" (column 10, row e; rows a-e and f-j across the middle groove), power rails "+:16" and
+// "-:16" (at column 16, the rails past row j; "+a:16" and "-a:16" for the rails past row a), header pins
+// "pin:11" (physical number). Lengths are in hole pitches (2.54 mm).
+class Breadboard : public Content {
+ public:
+  void clear();
+  // A 2 x (pins / 2) header left of the breadboard, pin 1 at the far end. label: the board's name.
+  void setBoard(const String& label, int pins = 40);
+  // number: physical pin. name: e.g. "GPIO17". Pins that wires use are always labeled.
+  void setPin(int number, const String& name, PinKind kind = PinKind::Gpio);
+  void setColumns(int columns = 30);  // half-size: 30
+  // A part with two legs. LED: leg1 is the long leg (+), leg2 the short one. Returns its index.
+  int addPart(const String& id, PartKind kind, const String& leg1, const String& leg2, const String& label = String());
+  void setResistor(int part, float ohms, float tolerancePercent = 5);  // bands from the value
+  void setPartColor(int part, uint16_t color);                         // LED, button cap, buzzer, box
+  // A wire, drawn as an arc. Returns its index among parts and wires.
+  int addWire(const String& id, const String& from, const String& to, uint16_t color);
+  // Steps: ids in the order they go in. step: the one to do now, -1 for none.
+  void addStep(const String& id);
+  void clearSteps();
+  void setStep(int step);
+  int step() const { return current; }
+  // Camera.
+  void showAll();   // the whole scene
+  void showStep();  // close to the step
+  bool showingStep() const { return toStep; }
+  void setAngles(float yawDeg, float pitchDeg);
+  // Call from loop() while shown, with the content's position on screen (InfoView::contentX() / contentY(),
+  // View::x() / y()). Reads M5.Touch. Returns true when it used a touch.
+  bool touch(int viewX, int viewY);
+
+  void draw(LovyanGFX& g, int w, int h) override;
+  bool animate(uint32_t now) override;
+
+ private:
+  struct End {
+    uint8_t type;  // 0 none, 1 hole, 2 rail, 3 pin
+    int16_t a;     // column, or pin number
+    int8_t b;      // row 0-9, or rail: +1 / -1 past row j, +2 / -2 past row a
+  };
+  struct Item {
+    String id, label;
+    int8_t kind;  // -1: wire, else PartKind
+    End ends[2];
+    uint16_t color;
+    int32_t partColor;
+    float ohms, tolerance;
+  };
+  struct Pin {
+    String name;
+    PinKind kind;
+  };
+  String board;
+  std::vector<Pin> pins;
+  std::vector<Item> items;
+  std::vector<String> steps;
+  int columns = 30, current = -1;
+  // camera
+  float yaw = 0, pitch = 55, scale = 0, from = 0, to = 0;
+  bool toStep = false, phase = true, moving = false;
+  Tween move;
+  int vw = 0, vh = 0;
+  // touch
+  bool down = false, dragging = false, pinching = false;
+  int downX = 0, downY = 0, lastX = 0, lastY = 0;
+  float pinchD0 = 1, pinchS0 = 1;
+  uint32_t downAt = 0, tapAt = 0;
+  int stepItem() const;
+  float fitScale() const;
+  float stepScale() const;
+  void zoomTo(float s);
+  void stepCenter(float& x, float& y, float& z) const;
+};
+
 enum class Level : uint8_t { Normal, Warn, Error };
 
 // The last lines of a log, colored by level (theme.text, theme.warn, theme.error).
@@ -423,42 +575,6 @@ class Subtitle {
   int over() const;
   void advance(uint32_t now);
   void draw(int offset);
-};
-
-// ---- Animation ----
-// Easing curves map 0..1 to 0..1. Tween turns time into an eased 0..1; mix() blends colors with it.
-
-using Ease = float (*)(float t);
-namespace ease {
-float linear(float t);
-float inOut(float t);  // smoothstep
-float inQuad(float t);
-float outQuad(float t);
-float inOutQuad(float t);
-float inCubic(float t);
-float outCubic(float t);
-float inOutCubic(float t);
-}  // namespace ease
-
-// Colors from a to b at t (0..1).
-uint16_t mix565(uint16_t a, uint16_t b, float t);
-uint32_t mix888(uint32_t a, uint32_t b, float t);  // 0xRRGGBB
-inline float mix(float a, float b, float t) { return a + (b - a) * t; }
-
-class Tween {
- public:
-  // Starts from 0 at now, reaching 1 after ms.
-  void start(uint32_t ms, Ease curve = ease::inOut) { start(ms, curve, millis()); }
-  void start(uint32_t ms, Ease curve, uint32_t now);
-  // Eased 0..1 at now. 1 once finished, and before any start().
-  float value() const { return value(millis()); }
-  float value(uint32_t now) const;
-  bool running() const { return running(millis()); }
-  bool running(uint32_t now) const { return ms && now - startedAt < ms; }
-
- private:
-  uint32_t startedAt = 0, ms = 0;
-  Ease curve = nullptr;
 };
 
 // ---- Face ----

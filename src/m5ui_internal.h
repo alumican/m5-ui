@@ -19,6 +19,32 @@ int charLen(uint8_t c);
 // Resistor 4-band code: indexes into theme.bands for two digits, multiplier and tolerance (-1: no band). False if
 // the value cannot be coded (not above 0, below 0.1 ohm, or beyond white x 10^9).
 bool colorCode(float ohms, float tolerancePercent, int out[4]);
+// Breadboard places. type: 0 none, 1 hole (a: column, b: row 0-9 for a-j), 2 rail (a: column, b: +1 / -1 past
+// row j, +2 / -2 past row a), 3 header pin (a: physical number).
+struct Place {
+  uint8_t type;
+  int16_t a;
+  int8_t b;
+};
+// "10e", "+:16", "-a:16", "pin:11". False if not one of these.
+bool parsePlace(const String& s, Place& out);
+// Position in hole pitches: x along the columns (0 at the middle), y across (row j side positive), z up (0 on
+// the breadboard). columns: breadboard columns. pins: header pins.
+bool placePosition(const Place& p, int columns, int pins, float& x, float& y, float& z);
+// x of the header's middle, and the breadboard's half width and depth.
+float headerX(int columns);
+float boardHalfW(int columns);
+const float BOARD_HALF_D = 9.5f;
+
+// Projection for the breadboard view: turns around (tx, ty, tz) by yaw, looks down by pitch (degrees), scale
+// px per pitch, mild perspective. depth grows toward the viewer.
+struct Camera {
+  float yaw = 0, pitch = 55, scale = 8, tx = 0, ty = 0, tz = 0, cx = 160, cy = 70;
+  void prepare();
+  void project(float x, float y, float z, float& sx, float& sy, float& depth) const;
+  float sinYaw = 0, cosYaw = 1, sinPitch = 0, cosPitch = 1;
+};
+
 struct Area {
   int x, y, w, h;
 };

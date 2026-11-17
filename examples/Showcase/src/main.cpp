@@ -17,8 +17,9 @@ m5ui::Terminal terminal;
 m5ui::Typing typing;
 m5ui::StatusList status;
 m5ui::Circuit circuit;
+m5ui::Breadboard breadboard;
 
-enum Screen { SHOW_FACE, SHOW_PINS40, SHOW_PINS8, SHOW_CIRCUIT, SHOW_TERMINAL, SHOW_TYPING, SHOW_STATUS, SHOW_COUNT };
+enum Screen { SHOW_FACE, SHOW_PINS40, SHOW_PINS8, SHOW_CIRCUIT, SHOW_BREADBOARD, SHOW_TERMINAL, SHOW_TYPING, SHOW_STATUS, SHOW_COUNT };
 int screen = SHOW_FACE;
 uint32_t lastStep = 0;
 int tick = 0;
@@ -85,6 +86,24 @@ void setupCircuit() {
   circuit.setBlink(true);
 }
 
+// GPIO17 -> 330 ohm -> LED -> GND on a half-size breadboard, in five steps.
+void setupBreadboard() {
+  using P = m5ui::PartKind;
+  static const char* names[40] = {
+      "3V3",    "5V",     "GPIO2",  "5V",     "GPIO3",  "GND",    "GPIO4",  "GPIO14", "GND",    "GPIO15",
+      "GPIO17", "GPIO18", "GPIO27", "GND",    "GPIO22", "GPIO23", "3V3",    "GPIO24", "GPIO10", "GND",
+      "GPIO9",  "GPIO25", "GPIO11", "GPIO8",  "GND",    "GPIO7",  "ID_SD",  "ID_SC",  "GPIO5",  "GND",
+      "GPIO6",  "GPIO12", "GPIO13", "GND",    "GPIO19", "GPIO16", "GPIO26", "GPIO20", "GND",    "GPIO21"};
+  breadboard.setBoard("40-pin board", 40);
+  for (int i = 0; i < 40; i++) breadboard.setPin(i + 1, names[i]);
+  breadboard.addWire("W1", "pin:11", "10a", m5ui::colorByName("yellow"));
+  breadboard.setResistor(breadboard.addPart("R1", P::Resistor, "10e", "14e", "330 ohm"), 330);
+  breadboard.setPartColor(breadboard.addPart("D1", P::Led, "14c", "15c", "LED"), m5ui::colorByName("red"));
+  breadboard.addWire("W2", "15a", "-:15", m5ui::colorByName("black"));
+  breadboard.addWire("W3", "pin:9", "-:20", m5ui::colorByName("black"));
+  for (const char* id : {"W1", "R1", "D1", "W2", "W3"}) breadboard.addStep(id);
+}
+
 void show(int s) {
   screen = s;
   tick = 0;
@@ -111,6 +130,11 @@ void show(int s) {
     case SHOW_CIRCUIT:
       info.open("Wiring", &circuit);
       subtitle.set("Each loop goes from a pin, through the parts, back to GND.");
+      break;
+    case SHOW_BREADBOARD:
+      breadboard.setStep(0);
+      info.open("Breadboard", &breadboard);
+      subtitle.set("Drag to turn, pinch or double tap to zoom. Tap the title for the next screen.");
       break;
     case SHOW_TERMINAL:
       terminal.clear();
@@ -168,6 +192,9 @@ void step() {
         else circuit.highlight(0, 1);
       }
       break;
+    case SHOW_BREADBOARD:  // the next step every 5 s
+      if (tick % 50 == 0) breadboard.setStep((breadboard.step() + 1) % 5);
+      break;
     case SHOW_PINS40:
       if (tick % 30 == 0) header40.setRotation(tick / 30 * 90);
       break;
@@ -202,6 +229,7 @@ void setup() {
   M5.Display.fillScreen(TFT_BLACK);
   setupPins();
   setupCircuit();
+  setupBreadboard();
   bigFace.begin(0, 0, 320, 240);  // the subtitle band and the badge stay on top
   smallFace.begin(m5ui::metrics.infoX, m5ui::metrics.infoY, m5ui::metrics.cornerW, m5ui::metrics.cornerH);
   smallFace.setLayout(m5ui::FaceLayout::compact());
@@ -212,7 +240,9 @@ void setup() {
 
 void loop() {
   M5.update();
-  if (M5.Touch.getDetail().wasClicked()) show((screen + 1) % SHOW_COUNT);
+  // The breadboard takes touches in its area; elsewhere a tap goes to the next screen.
+  bool used = screen == SHOW_BREADBOARD && breadboard.touch(info.contentX(), info.contentY());
+  if (!used && M5.Touch.getDetail().wasClicked()) show((screen + 1) % SHOW_COUNT);
   if (millis() - lastStep >= 100) {
     lastStep = millis();
     step();
@@ -221,7 +251,18 @@ void loop() {
   face().setMouth(voiceLevel(now));
   face().setBackground(m5ui::mix565(bgFrom, bgTo, fade.value(now)));
   face().update();
+  uint32_t t0 = micros();
   info.update();
+  if (screen == SHOW_BREADBOARD) {  // frames per second and draw time, to Serial
+    static uint32_t frames = 0, worst = 0, since = 0;
+    uint32_t us = micros() - t0;
+    if (us > 1000) frames++, worst = std::max(worst, us);
+    if (now - since >= 1000) {
+      if (frames) Serial.printf("breadboard: %u frames/s, slowest %u ms\n", (unsigned)frames, (unsigned)(worst / 1000));
+      frames = worst = 0;
+      since = now;
+    }
+  }
   subtitle.update();
   badge.update();
   delay(5);
