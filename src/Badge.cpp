@@ -34,10 +34,36 @@ static void micOffIcon(LovyanGFX& g, int s, bool) {
   g.drawWideLine(m, m, s - m, s - m, w, theme.iconOff);
 }
 
+// Plus and minus: rounded bars across the middle.
+static void bars(LovyanGFX& g, int s, bool on, bool vertical) {
+  uint16_t c = on ? theme.iconOn : theme.iconOff;
+  int t = std::max(2, s / 7), l = s * 3 / 5, x = (s - l) / 2, y = (s - t) / 2;
+  g.fillRoundRect(x, y, l, t, t / 2, c);
+  if (vertical) g.fillRoundRect(y, x, t, l, t / 2, c);
+}
+static void plusIcon(LovyanGFX& g, int s, bool on) { bars(g, s, on, true); }
+static void minusIcon(LovyanGFX& g, int s, bool on) { bars(g, s, on, false); }
+
 namespace icons {
 const Icon mic = {micIcon, true};
 const Icon micOff = {micOffIcon, false};
+const Icon plus = {plusIcon, false};
+const Icon minus = {minusIcon, false};
 }  // namespace icons
+
+void detail::drawIcon(LovyanGFX& g, const Icon& icon, int x, int y, int size, bool on) {
+  static M5Canvas c;  // drawn here, then put on g with its background left out
+  if (size <= 0) return;
+  if (c.width() != size || !c.getBuffer()) {
+    if (c.getBuffer()) c.deleteSprite();
+    c.setColorDepth(16);
+    c.setPsram(false);
+    if (!c.createSprite(size, size)) return;
+  }
+  c.fillScreen(KEY);
+  icon.draw(c, size, on);
+  c.pushSprite(&g, x, y, KEY);
+}
 
 // ---- Badge ----
 

@@ -31,7 +31,7 @@ UI components for M5Unified on 320x240 displays (Core2, CoreS3). Tested with M5U
 
 ```ini
 lib_deps =
-  https://github.com/alumican/m5-ui.git#v0.8.1
+  https://github.com/alumican/m5-ui.git#v0.9.0
 ```
 
 ## Panel
@@ -155,7 +155,7 @@ Contents:
 - **Typing**: `setText()` or `append()` the text typed so far and `setProgress(done, total)`. Shows the last lines with a blinking cursor and a "done / total" bar.
 - **StatusList**: `set(name, value, Light)` adds or updates a row with a colored dot. Rows that do not fit go into a second column.
 - **Circuit**: wiring for beginners. A board on the left, and loops beside it, each from a board terminal through parts in series back to another terminal. Parts are pictures: `Led` (dome and two legs, the longer + leg marked), `Resistor` (banded body), `Button`, `Buzzer`, or a `Box` with a name. Wires are thick and colored per segment; dark wires get an outline. Highlight a loop or a part to explain a step.
-- **Breadboard**: a breadboard in 3D with a board's pin header beside it, parts and wires, and the step to do now lit. Turn it with a finger, zoom with two (zooming in moves toward the step), double tap or the button for whole view / step.
+- **Breadboard**: a breadboard in 3D with a board's pin header beside it, parts and wires, and the step to do now lit. Turn it with a finger, zoom with two fingers or the zoom buttons (zooming in moves toward the step), double tap for whole view / step.
 - **Your own**: subclass `m5ui::Content`, draw in `draw(LovyanGFX& g, int w, int h)` and call `invalidate()` when it changes. Override `animate(now)` to return true when it should be redrawn as time passes.
 
 `Subtitle::set(text)` draws one line in the band at `metrics.subtitleY`, centered or from the left (`metrics.subtitleAlign = m5ui::Align::Left`, `metrics.pad` from the edge). Text wider than the screen scrolls to its end and back to its start at `timing.subtitleSpeed` (0 cuts it with "..."); call `update()` from `loop()`. `set("")` clears the band.
@@ -207,13 +207,14 @@ info.open("Breadboard", &bb);
 
 void loop() {
   M5.update();
-  bb.touch(info.contentX(), info.contentY());  // drag, pinch, double tap, the zoom button
+  bb.touch(info.contentX(), info.contentY());  // drag, pinch, double tap, the zoom buttons
   info.update();
 }
 ```
 
 - Places: holes `"10e"` (column 10, row e; a-e and f-j across the groove), rails `"+:16"` / `"-:16"` (past row j; `"+a:16"` / `"-a:16"` past row a), header pins `"pin:11"`.
 - `setStep(i)` lights item `i` of the steps and the holes or pins it goes into, with their names, blinking; done steps are a little dim, later ones dimmer. `-1`: none.
+- Zoom buttons at the bottom right, zoom out and zoom in (`icons::minus`, `icons::plus`): each press zooms by `metrics.bbZoomStep` over `timing.zoomStepMs`, in toward the step, out to the whole view. A button lights while held (`theme.button`), acts on release, and dims when it cannot go further. Size and place: `metrics.bbButton`, `bbButtonGap`, `bbButtonMargin`. `zoomIn()` and `zoomOut()` do the same from code.
 - `showAll()`, `showStep()`, `setAngles(yaw, pitch)`. Zooming in by pinch slides toward the step; `metrics.bbFocusPx` sets how close `showStep()` goes.
 - Pins that wires use are always labeled; every pin when zoomed in past `metrics.bbLabelPx`.
 - Dragging turns it as if holding the board: right turns it right, down tips it toward you, seen more from above (`metrics.bbTurnPerPx`, `bbTiltPerPx`, degrees per pixel).

@@ -76,7 +76,10 @@ struct Metrics {
   int16_t faceMinEye = 4, faceMinLine = 2;
   int16_t floatX = 4, floatY = 4, floatSize = 88;  // a floating face: its disc's box on screen
   // Breadboard drag: degrees per pixel, across (turn) and up and down (tilt).
-  float bbTurnPerPx = 0.5f, bbTiltPerPx = 0.4f;  // Face: minimums in screen pixels, so small faces stay readable
+  float bbTurnPerPx = 0.5f, bbTiltPerPx = 0.4f;
+  // Breadboard zoom buttons (- and +) at the bottom right: size, gap and margin; each press zooms by bbZoomStep.
+  int16_t bbButton = 36, bbButtonGap = 8, bbButtonMargin = 6;
+  float bbZoomStep = 1.5f;  // Face: minimums in screen pixels, so small faces stay readable
 };
 extern Metrics metrics;
 
@@ -94,6 +97,7 @@ struct Timing {
   uint16_t gazeEveryMs = 1500, gazeRandomMs = 2500;    // Face: time between looks when looking around
   uint16_t breathMs = 3300;                           // Face: one breath, up and down
   uint16_t viewMoveMs = 400;       // Breadboard: camera move between the whole view and the step
+  uint16_t zoomStepMs = 250;       // Breadboard: one press of a zoom button
   uint16_t doubleTapMs = 350;      // Breadboard: second tap within this toggles the view
   uint16_t badgeBlinkMs = 600;     // blinking part of an icon (e.g. the dot of icons::mic), each phase; 0 keeps it on
 };
@@ -420,8 +424,8 @@ class Circuit : public Content {
 };
 
 // A breadboard in 3D, seen from above at an angle, with a board's pin header beside it, parts and wires, and
-// the step to do now lit and blinking. One finger turns it, two fingers zoom (zooming in moves toward the
-// step), a double tap or the button at the bottom right switches between the whole view and the step.
+// the step to do now lit and blinking. One finger turns it, two fingers or the - and + buttons at the bottom
+// right zoom (zooming in moves toward the step), a double tap switches between the whole view and the step.
 // Places: holes "10e" (column 10, row e; rows a-e and f-j across the middle groove), power rails "+:16" and
 // "-:16" (at column 16, the rails past row j; "+a:16" and "-a:16" for the rails past row a), header pins
 // "pin:11" (physical number). Lengths are in hole pitches (2.54 mm).
@@ -452,6 +456,9 @@ class Breadboard : public Content {
   // Room kept free at the sides of the content (e.g. under a floating face): the scene fits and centers in the
   // rest. The drawing still fills the whole content.
   void setMargins(int left, int top, int right, int bottom);
+  // One zoom step in (+) or out (-), as the buttons do. Out stops at the whole view.
+  void zoomIn();
+  void zoomOut();
   // Call from loop() while shown, with the content's position on screen (InfoView::contentX() / contentY(),
   // View::x() / y()). Reads M5.Touch. Returns true when it used a touch.
   bool touch(int viewX, int viewY);
@@ -489,6 +496,9 @@ class Breadboard : public Content {
   int vw = 0, vh = 0, marginL = 0, marginT = 0, marginR = 0, marginB = 0;
   // touch
   bool down = false, dragging = false, pinching = false;
+  int8_t pressed = -1;  // zoom button held: 0 out, 1 in
+  int buttonAt(int x, int y) const;
+  void buttonBox(int i, int& x, int& y) const;
   int downX = 0, downY = 0, lastX = 0, lastY = 0;
   float pinchD0 = 1, pinchS0 = 1;
   uint32_t downAt = 0, tapAt = 0;
@@ -695,6 +705,8 @@ struct Icon {
 namespace icons {
 extern const Icon mic;     // listening: theme.iconOn microphone with a blinking theme.iconAlert dot
 extern const Icon micOff;  // not listening: theme.iconOff microphone, struck through
+extern const Icon plus;    // zoom in; theme.iconOn, or theme.iconOff when on is false (unavailable)
+extern const Icon minus;   // zoom out; same colors
 }  // namespace icons
 
 class Badge {

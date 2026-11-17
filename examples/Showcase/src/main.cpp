@@ -152,7 +152,7 @@ void show(int s) {
     case SHOW_BREADBOARD:
       breadboard.setStep(0);
       info.open("Breadboard", &breadboard);
-      subtitle.set("Drag to turn, pinch or double tap to zoom. Tap the title for the next screen.");
+      subtitle.set("Drag to turn. Pinch or the zoom buttons to come closer. Tap the title for the next screen.");
       break;
     case SHOW_TERMINAL:
       terminal.clear();

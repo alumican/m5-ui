@@ -299,6 +299,39 @@ void Breadboard::zoomTo(float s) {
   invalidate();
 }
 
+void Breadboard::zoomIn() {
+  float base = moving ? to : scale > 0 ? scale : fitScale();
+  float s = std::min(base * metrics.bbZoomStep, (float)metrics.bbMaxPx);
+  toStep = s > (fitScale() + stepScale()) / 2;
+  zoomTo(s);
+  move.start(timing.zoomStepMs, ease::outCubic);
+}
+
+void Breadboard::zoomOut() {
+  float base = moving ? to : scale > 0 ? scale : fitScale();
+  float s = std::max(base / metrics.bbZoomStep, fitScale());
+  toStep = s > (fitScale() + stepScale()) / 2;
+  zoomTo(s);
+  move.start(timing.zoomStepMs, ease::outCubic);
+}
+
+// Zoom buttons, - then +, in a row at the bottom right of the content.
+void Breadboard::buttonBox(int i, int& x, int& y) const {
+  const Metrics& m = metrics;
+  x = vw - m.bbButtonMargin - m.bbButton - (1 - i) * (m.bbButton + m.bbButtonGap);
+  y = vh - m.bbButtonMargin - m.bbButton;
+}
+
+int Breadboard::buttonAt(int x, int y) const {
+  const int b = metrics.bbButton, slack = metrics.bbButtonGap / 2;  // a little extra around each
+  for (int i = 0; i < 2; i++) {
+    int bx, by;
+    buttonBox(i, bx, by);
+    if (x >= bx - slack && x < bx + b + slack && y >= by - slack && y < by + b + slack) return i;
+  }
+  return -1;
+}
+
 void Breadboard::showAll() {
   toStep = false;
   zoomTo(fitScale());
@@ -346,7 +379,7 @@ bool Breadboard::touch(int viewX, int viewY) {
     auto a = M5.Touch.getDetail(0), b = M5.Touch.getDetail(1);
     float d = std::max(1.0f, hypotf(a.x - b.x, a.y - b.y));
     if (!pinching) {
-      pinching = true, dragging = false, down = false;
+      pinching = true, dragging = false, down = false, pressed = -1;
       pinchD0 = d, pinchS0 = scale;
     } else {
       moving = false;
@@ -368,6 +401,14 @@ bool Breadboard::touch(int viewX, int viewY) {
       down = true, dragging = false;
       downX = lastX = x, downY = lastY = y;
       downAt = now;
+      pressed = buttonAt(x, y);  // a zoom button: lit while held, acts on release
+      if (pressed >= 0) invalidate();
+      return true;
+    }
+    if (pressed >= 0) {
+      int over = buttonAt(x, y) == pressed;
+      lastX = x, lastY = y;
+      if (!over) pressed = -1, invalidate();  // slid off: nothing happens
       return true;
     }
     if (!dragging && abs(x - downX) + abs(y - downY) >= metrics.dragPx) dragging = true;
@@ -382,11 +423,17 @@ bool Breadboard::touch(int viewX, int viewY) {
   }
   if (!down) return false;
   down = false;
+  if (pressed >= 0) {  // released on a zoom button
+    int b = pressed;
+    pressed = -1;
+    tapAt = 0;
+    if (b) zoomIn();
+    else zoomOut();
+    return true;
+  }
   if (dragging || now - downAt > 500) return true;
-  // A tap: the button at the bottom right, or the second of a double tap, switches the view.
-  int bs = std::max(20, vh / 6);
-  bool onButton = downX >= vw - bs - 4 && downY >= vh - bs - 4;
-  if (onButton || (tapAt && now - tapAt < timing.doubleTapMs)) {
+  // A tap; the second of a double tap switches between the whole view and the step.
+  if (tapAt && now - tapAt < timing.doubleTapMs) {
     tapAt = 0;
     if (toStep) showAll();
     else showStep();
@@ -768,13 +815,22 @@ void Breadboard::draw(LovyanGFX& g, int w, int h) {
     g.drawString(detail::fit(g, board, w / 2), bx, by);
   }
 
-  // ---- Button: whole view / step ----
-  int bs = std::max(20, h / 6), bx = w - bs / 2 - 4, by = h - bs / 2 - 4;
-  g.fillCircle(bx, by, bs / 2, theme.buttonOff);
-  g.drawCircle(bx, by - 1, bs / 4, theme.text);  // magnifier
-  g.drawLine(bx + bs / 6, by + bs / 6 - 1, bx + bs / 3, by + bs / 3 - 1, theme.text);
-  g.drawFastHLine(bx - bs / 8, by - 1, bs / 4 + 1, theme.text);
-  if (!toStep) g.drawFastVLine(bx, by - 1 - bs / 8, bs / 4 + 1, theme.text);
+  // ---- Zoom buttons: - and +, lit while pressed, dim when they cannot go further ----
+  {
+    const int b = metrics.bbButton, r = b / 2;
+    const float target = moving ? to : scale;
+    const bool can[2] = {target > fitScale() * 1.01f, target < metrics.bbMaxPx * 0.99f};
+    const Icon* icon[2] = {&icons::minus, &icons::plus};
+    for (int i = 0; i < 2; i++) {
+      int bx, by;
+      buttonBox(i, bx, by);
+      uint16_t fill = pressed == i ? theme.button : theme.buttonOff;
+      g.fillCircle(bx + r, by + r, r, fill);
+      g.drawCircle(bx + r, by + r, r, pressed == i ? theme.text : theme.line);
+      int is = b * 3 / 5;
+      detail::drawIcon(g, *icon[i], bx + (b - is) / 2, by + (b - is) / 2, is, can[i]);
+    }
+  }
   g.setTextDatum(top_left);
 }
 

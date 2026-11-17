@@ -69,6 +69,8 @@ bool damaged(uint32_t& seen, Area a);
 // overlays drawn in except self. key >= 0: c's pixels of that color are left out. Resets the display clip rect.
 void push(M5Canvas& c, int x, int y, Area a, int skip = -1, int self = -1, int32_t key = -1);
 void push(M5Canvas& c, int x, int y, int skip = -1);
+// Draws icon in a size x size square at (x, y) on g.
+void drawIcon(LovyanGFX& g, const Icon& icon, int x, int y, int size, bool on);
 // Allocates a 16-bit sprite, in PSRAM if there is any. False if out of memory.
 bool makeSprite(M5Canvas& c, int w, int h);
 
