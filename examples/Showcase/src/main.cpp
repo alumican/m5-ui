@@ -9,7 +9,8 @@
 m5ui::InfoView info;
 m5ui::Subtitle subtitle;
 m5ui::Badge badge;  // top right: mic on / off, toggled every 3 seconds
-m5ui::Face bigFace, smallFace;
+m5ui::Face bigFace, smallFace, floatFace;  // full screen, InfoView corner, floating over a View
+m5ui::View view;                           // full screen, above the subtitle band
 m5ui::Tween fade;
 uint16_t bgFrom = TFT_BLACK, bgTo = TFT_BLACK;
 m5ui::PinHeader header40, header8;
@@ -19,12 +20,14 @@ m5ui::StatusList status;
 m5ui::Circuit circuit;
 m5ui::Breadboard breadboard;
 
-enum Screen { SHOW_FACE, SHOW_PINS40, SHOW_PINS8, SHOW_CIRCUIT, SHOW_BREADBOARD, SHOW_TERMINAL, SHOW_TYPING, SHOW_STATUS, SHOW_COUNT };
+enum Screen { SHOW_FACE, SHOW_PINS40, SHOW_PINS8, SHOW_CIRCUIT, SHOW_BREADBOARD, SHOW_BREADBOARD_FULL, SHOW_TERMINAL, SHOW_TYPING, SHOW_STATUS, SHOW_COUNT };
 int screen = SHOW_FACE;
 uint32_t lastStep = 0;
 int tick = 0;
 
-m5ui::Face& face() { return screen == SHOW_FACE ? bigFace : smallFace; }
+m5ui::Face& face() {
+  return screen == SHOW_FACE ? bigFace : screen == SHOW_BREADBOARD_FULL ? floatFace : smallFace;
+}
 
 // A made-up voice level: bursts of syllables with pauses between sentences.
 float voiceLevel(uint32_t now) {
@@ -111,6 +114,21 @@ void show(int s) {
   // a few characters at a time and the subtitle keeps its newest part in view.
   m5ui::metrics.subtitleAlign = s == SHOW_TERMINAL || s == SHOW_FACE ? m5ui::Align::Left : m5ui::Align::Center;
   m5ui::metrics.subtitleTail = s == SHOW_FACE;
+  if (screen != SHOW_BREADBOARD_FULL) {  // not the full-screen breadboard: no floating face, no View
+    floatFace.hide();
+    view.close();
+  }
+  if (s == SHOW_BREADBOARD_FULL) {  // the breadboard on the whole screen, the face floating at the top left
+    info.close();
+    breadboard.setMargins(0, m5ui::metrics.floatY + m5ui::metrics.floatSize, 0, 0);
+    breadboard.showAll();
+    view.setContent(&breadboard);
+    view.show();
+    floatFace.show();
+    subtitle.set("Full screen, the face floating. Tap here for the next screen.");
+    return;
+  }
+  breadboard.setMargins(0, 0, 0, 0);
   if (s == SHOW_FACE) {
     info.close();
     bigFace.show();
@@ -193,6 +211,7 @@ void step() {
       }
       break;
     case SHOW_BREADBOARD:  // the next step every 5 s
+    case SHOW_BREADBOARD_FULL:
       if (tick % 50 == 0) breadboard.setStep((breadboard.step() + 1) % 5);
       break;
     case SHOW_PINS40:
@@ -233,6 +252,9 @@ void setup() {
   bigFace.begin(0, 0, 320, 240);  // the subtitle band and the badge stay on top
   smallFace.begin(m5ui::metrics.infoX, m5ui::metrics.infoY, m5ui::metrics.cornerW, m5ui::metrics.cornerH);
   smallFace.setLayout(m5ui::FaceLayout::compact());
+  floatFace.beginFloating();
+  floatFace.hide();
+  view.begin(0, 0, 320, m5ui::metrics.subtitleY);
   badge.set(m5ui::icons::mic);
   if (!info.begin()) Serial.println("m5-ui: out of memory");
   show(SHOW_FACE);
@@ -241,7 +263,9 @@ void setup() {
 void loop() {
   M5.update();
   // The breadboard takes touches in its area; elsewhere a tap goes to the next screen.
-  bool used = screen == SHOW_BREADBOARD && breadboard.touch(info.contentX(), info.contentY());
+  bool used = screen == SHOW_BREADBOARD ? breadboard.touch(info.contentX(), info.contentY())
+              : screen == SHOW_BREADBOARD_FULL ? breadboard.touch(view.x(), view.y())
+                                               : false;
   if (!used && M5.Touch.getDetail().wasClicked()) show((screen + 1) % SHOW_COUNT);
   if (millis() - lastStep >= 100) {
     lastStep = millis();
@@ -249,11 +273,12 @@ void loop() {
   }
   uint32_t now = millis();
   face().setMouth(voiceLevel(now));
-  face().setBackground(m5ui::mix565(bgFrom, bgTo, fade.value(now)));
+  if (screen != SHOW_BREADBOARD_FULL) face().setBackground(m5ui::mix565(bgFrom, bgTo, fade.value(now)));
   face().update();
   uint32_t t0 = micros();
   info.update();
-  if (screen == SHOW_BREADBOARD) {  // frames per second and draw time, to Serial
+  view.update();
+  if (screen == SHOW_BREADBOARD || screen == SHOW_BREADBOARD_FULL) {  // frames per second and draw time, to Serial
     static uint32_t frames = 0, worst = 0, since = 0;
     uint32_t us = micros() - t0;
     if (us > 1000) frames++, worst = std::max(worst, us);

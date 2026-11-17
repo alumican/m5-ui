@@ -238,10 +238,27 @@ int Breadboard::stepItem() const {
 
 static const float LABEL_ROOM = 9;  // pitches left of the header kept for pin labels in the whole view
 
+// The whole scene (labels left of the header, the board name past its far end) seen at the current angles, at
+// scale 1 around the scene middle: its box on screen.
+void Breadboard::sceneBox(float& x0, float& y0, float& x1, float& y1) const {
+  Camera c;
+  const float left = detail::headerX(columns) - LABEL_ROOM, right = detail::boardHalfW(columns) + 0.5f;
+  c.yaw = yaw, c.pitch = pitch, c.scale = 1, c.cx = c.cy = 0, c.tx = (left + right) / 2;
+  c.prepare();
+  const float far = std::max(detail::BOARD_HALF_D, pins.size() / 4.0f + 2.5f), near = -std::max(detail::BOARD_HALF_D, pins.size() / 4.0f + 1);
+  x0 = y0 = 1e9f, x1 = y1 = -1e9f;
+  for (int i = 0; i < 8; i++) {
+    float sx, sy, d;
+    c.project(i & 1 ? right : left, i & 2 ? far : near, i & 4 ? 2.0f : -2.5f, sx, sy, d);
+    x0 = std::min(x0, sx), x1 = std::max(x1, sx), y0 = std::min(y0, sy), y1 = std::max(y1, sy);
+  }
+}
+
 float Breadboard::fitScale() const {
-  float left = detail::headerX(columns) - LABEL_ROOM, right = detail::boardHalfW(columns) + 0.5f;
-  float w = vw ? vw : 320, h = vh ? vh : 140;
-  return std::min((w - 8) / (right - left), (h - 8) / (detail::BOARD_HALF_D * 2 * 0.9f + 3));
+  float x0, y0, x1, y1;
+  sceneBox(x0, y0, x1, y1);
+  float w = (vw ? vw : 320) - marginL - marginR - 8, h = (vh ? vh : 140) - marginT - marginB - 8;
+  return std::max(1.0f, std::min(w / std::max(1.0f, x1 - x0), h / std::max(1.0f, y1 - y0)));
 }
 
 float Breadboard::stepScale() const {
@@ -256,7 +273,7 @@ float Breadboard::stepScale() const {
     }
     if (ok) span = std::max(4.0f, hypotf(p[0][0] - p[1][0], p[0][1] - p[1][1]) + 3);
   }
-  float s = std::min((float)metrics.bbFocusPx * 1.0f, std::min(vw ? vw : 320, vh ? vh : 140) * 0.8f / span);
+  float s = std::min((float)metrics.bbFocusPx, std::min((vw ? vw : 320) - marginL - marginR, (vh ? vh : 140) - marginT - marginB) * 0.8f / span);
   return std::max(s, over * 1.6f);
 }
 
@@ -290,6 +307,12 @@ void Breadboard::showAll() {
 void Breadboard::showStep() {
   toStep = true;
   zoomTo(stepScale());
+}
+
+void Breadboard::setMargins(int left, int top, int right, int bottom) {
+  marginL = left, marginT = top, marginR = right, marginB = bottom;
+  if (!toStep) scale = 0;  // fit again
+  invalidate();
 }
 
 void Breadboard::setAngles(float y, float p) {
@@ -349,8 +372,9 @@ bool Breadboard::touch(int viewX, int viewY) {
     }
     if (!dragging && abs(x - downX) + abs(y - downY) >= metrics.dragPx) dragging = true;
     if (dragging && (x != lastX || y != lastY)) {
-      yaw -= (x - lastX) * 0.5f;
-      pitch = constrain(pitch + (y - lastY) * 0.4f, 10.0f, 90.0f);
+      // As if holding the board: right turns it to the right, down tips its far side toward you (more from above).
+      yaw += (x - lastX) * metrics.bbTurnPerPx;
+      pitch = constrain(pitch + (y - lastY) * metrics.bbTiltPerPx, 10.0f, 90.0f);
       lastX = x, lastY = y;
       invalidate();
     }
@@ -421,12 +445,18 @@ void Breadboard::draw(LovyanGFX& g, int w, int h) {
 
   // Camera: the target slides from the scene middle to the step as the zoom goes from whole to close.
   Camera cam;
-  cam.yaw = yaw, cam.pitch = pitch, cam.scale = scale, cam.cx = w / 2.0f, cam.cy = h / 2.0f;
-  float ax = (hx - LABEL_ROOM + hw + 0.5f) / 2, ay = 0, sxT, syT, szT;
+  cam.yaw = yaw, cam.pitch = pitch, cam.scale = scale;
+  float sxT, syT, szT;
   stepCenter(sxT, syT, szT);
   float over = fitScale(), close = stepScale();
   float k = si >= 0 && close > over ? constrain((scale - over) / (close - over), 0.0f, 1.0f) : 0;
-  cam.tx = mix(ax, sxT, k), cam.ty = mix(ay, syT, k), cam.tz = mix(0, szT, k);
+  // Whole view: the scene's box centered in the free area. Close: the step in the middle.
+  float bx0, by0, bx1, by1;
+  sceneBox(bx0, by0, bx1, by1);
+  const float ax = (detail::headerX(cols) - LABEL_ROOM + hw + 0.5f) / 2;  // sceneBox() turns around this
+  cam.tx = mix(ax, sxT, k), cam.ty = mix(0, syT, k), cam.tz = mix(0, szT, k);
+  cam.cx = (marginL + w - marginR) / 2.0f - (bx0 + bx1) / 2 * scale * (1 - k);
+  cam.cy = (marginT + h - marginB) / 2.0f - (by0 + by1) / 2 * scale * (1 - k);
   cam.prepare();
   const float s = scale;
 

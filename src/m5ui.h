@@ -37,6 +37,7 @@ struct Theme {
   uint16_t header = 0x2104;  // plastic of the pin header; pins use boardPad, its board uses board
   // Face: lines and the starting background
   uint16_t face = TFT_WHITE, faceBg = TFT_BLACK;
+  uint16_t cushion = TFT_BLACK, cushionRim = 0x39E7;  // a floating face's disc and its edge
   // PinHeader kinds
   uint16_t pinNone = 0x3186, pinPower = 0xF206, pinGround = 0x8410, pinGpio = 0x2EA6;
   uint16_t pinI2c = 0x4D7F, pinSpi = 0xA21E, pinUart = 0xFD20, pinOther = 0xF418;
@@ -71,7 +72,10 @@ struct Metrics {
   // Breadboard: view angle (degrees down from level), zoom limits and the zoom where every label shows, in
   // pixels per hole pitch.
   int16_t bbPitchDeg = 55, bbFocusPx = 18, bbMaxPx = 40, bbLabelPx = 13;
-  int16_t faceMinEye = 4, faceMinLine = 2;  // Face: minimums in screen pixels, so small faces stay readable
+  int16_t faceMinEye = 4, faceMinLine = 2;
+  int16_t floatX = 4, floatY = 4, floatSize = 88;  // a floating face: its disc's box on screen
+  // Breadboard drag: degrees per pixel, across (turn) and up and down (tilt).
+  float bbTurnPerPx = 0.5f, bbTiltPerPx = 0.4f;  // Face: minimums in screen pixels, so small faces stay readable
 };
 extern Metrics metrics;
 
@@ -440,6 +444,9 @@ class Breadboard : public Content {
   void showStep();  // close to the step
   bool showingStep() const { return toStep; }
   void setAngles(float yawDeg, float pitchDeg);
+  // Room kept free at the sides of the content (e.g. under a floating face): the scene fits and centers in the
+  // rest. The drawing still fills the whole content.
+  void setMargins(int left, int top, int right, int bottom);
   // Call from loop() while shown, with the content's position on screen (InfoView::contentX() / contentY(),
   // View::x() / y()). Reads M5.Touch. Returns true when it used a touch.
   bool touch(int viewX, int viewY);
@@ -474,7 +481,7 @@ class Breadboard : public Content {
   float yaw = 0, pitch = 55, scale = 0, from = 0, to = 0;
   bool toStep = false, phase = true, moving = false;
   Tween move;
-  int vw = 0, vh = 0;
+  int vw = 0, vh = 0, marginL = 0, marginT = 0, marginR = 0, marginB = 0;
   // touch
   bool down = false, dragging = false, pinching = false;
   int downX = 0, downY = 0, lastX = 0, lastY = 0;
@@ -482,6 +489,7 @@ class Breadboard : public Content {
   uint32_t downAt = 0, tapAt = 0;
   int stepItem() const;
   float fitScale() const;
+  void sceneBox(float& x0, float& y0, float& x1, float& y1) const;
   float stepScale() const;
   void zoomTo(float s);
   void stepCenter(float& x, float& y, float& z) const;
@@ -619,6 +627,15 @@ class Face {
   // Places the face and allocates a w x h sprite. Call again to move or resize it (the rest is kept). False if
   // out of memory.
   bool begin(int x, int y, int w, int h);
+  // A face floating over the rest of the screen (e.g. a full-screen View): a disc in theme.cushion at
+  // metrics.floatX, floatY, floatSize, FaceLayout::compact(). Same as begin() + setLayout() + setRound(true) +
+  // setBackground(theme.cushion).
+  bool beginFloating();
+  // Round: the background is a disc and the rest of the rect is transparent. InfoView, View, Subtitle and Face
+  // draw a round face into what they push under it, so neither flickers nor wipes the other.
+  void setRound(bool on);
+  // Stops drawing it; InfoView and View under it redraw that part. update() or show() brings it back.
+  void hide();
   void setLayout(const FaceLayout& layout);
   void setEyes(Eyes eyes);
   Eyes eyes() const { return style; }
@@ -651,6 +668,7 @@ class Face {
   Eyes style = Eyes::Normal;
   float mouth = 0, gx = 0, gy = 0, tx = 0, ty = 0;
   bool autoGaze = true, autoBlink = true, breath = true, colored = false, full = true, dirty = false;
+  bool round = false, hidden = false;
   uint16_t fg = 0, bg = 0, drawnBg = 0;
   uint32_t nextBlink = 0, blinkUntil = 0, nextGaze = 0, lastAt = 0, drawnAt = 0;
   uint32_t drawnKey = 0, seed = 0x9E3779B9u, damageSeen = 0;

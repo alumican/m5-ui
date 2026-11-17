@@ -75,6 +75,30 @@ void Face::setBackground(uint16_t c) {
   bg = c;
 }
 
+bool Face::beginFloating() {
+  const Metrics& m = metrics;
+  bool ok = begin(m.floatX, m.floatY, m.floatSize, m.floatSize);
+  setLayout(FaceLayout::compact());
+  setBackground(theme.cushion);
+  setRound(true);
+  return ok;
+}
+
+void Face::setRound(bool on) {
+  if (round && !on) hide();
+  round = on;
+  full = true;
+}
+
+void Face::hide() {
+  if (hidden) return;
+  hidden = true;
+  detail::Overlay& o = detail::overlays[detail::OVERLAY_FACE];
+  if (o.canvas == &canvas) o.canvas = nullptr;
+  detail::damage = {fx, fy, canvas.width(), canvas.height()};
+  detail::damageSeq++;
+}
+
 void Face::show() {
   full = true;
   update();
@@ -82,6 +106,7 @@ void Face::show() {
 
 void Face::update() {
   if (!canvas.getBuffer()) return;
+  if (hidden) hidden = false, full = true;
   const Metrics& m = metrics;
   const Timing& t = timing;
   uint32_t now = millis();
@@ -137,7 +162,14 @@ void Face::update() {
 
   // Draw: background, eyes, eyebrows, mouth, then the app's overlay.
   LovyanGFX& g = canvas;
-  g.fillScreen(bg);
+  if (round) {  // a disc on a transparent square
+    g.fillScreen(detail::KEY);
+    int d = std::min(W, H);
+    g.fillCircle(W / 2, H / 2, d / 2 - 1, bg);
+    if (theme.cushionRim != bg) g.drawCircle(W / 2, H / 2, d / 2 - 1, theme.cushionRim);
+  } else {
+    g.fillScreen(bg);
+  }
   for (int i = 0; i < 2; i++) {
     const bool left = i == 0;  // on screen
     const int x = eyeX[i] + ex, y = eyeY[i] + ey;
@@ -201,13 +233,17 @@ void Face::update() {
   by0 = std::min(by0, my - mh / 2 - lift - 2), by1 = std::max(by1, my + (mh + 1) / 2 + lift + 2);
   int nb[4] = {bx0, by0, bx1 - bx0, by1 - by0};
   bool whole = full || bg != drawnBg || !box[2] || (dirty && overlay && !ow);
+  // A round face floats: others draw it into what they push, and it pushes only its disc.
+  const int self = round ? (int)detail::OVERLAY_FACE : -1;
+  const int32_t transp = round ? (int32_t)detail::KEY : -1;
+  if (round) detail::overlays[detail::OVERLAY_FACE] = {&canvas, {fx, fy, W, H}};
   if (whole) {
-    detail::push(canvas, fx, fy);
+    detail::push(canvas, fx, fy, {fx, fy, W, H}, -1, self, transp);
   } else {
     int ux0 = std::min(nb[0], box[0]), uy0 = std::min(nb[1], box[1]);
     int ux1 = std::max(nb[0] + nb[2], box[0] + box[2]), uy1 = std::max(nb[1] + nb[3], box[1] + box[3]);
-    detail::push(canvas, fx, fy, {fx + ux0, fy + uy0, ux1 - ux0, uy1 - uy0});
-    if (dirty && overlay) detail::push(canvas, fx, fy, {fx + ox, fy + oy, ow, oh});
+    detail::push(canvas, fx, fy, {fx + ux0, fy + uy0, ux1 - ux0, uy1 - uy0}, -1, self, transp);
+    if (dirty && overlay) detail::push(canvas, fx, fy, {fx + ox, fy + oy, ow, oh}, -1, self, transp);
   }
   dirty = false;
   for (int i = 0; i < 4; i++) box[i] = nb[i];

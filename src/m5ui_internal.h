@@ -51,18 +51,23 @@ struct Area {
 // Areas kept clear while shown: a Subtitle's band. w 0 when not shown.
 enum { RESERVED_SUBTITLE, RESERVED };
 extern Area reserved[RESERVED];
-// A visible Badge: drawn into every sprite pushed over it, so it neither flickers nor gets wiped.
-extern M5Canvas* badge;
-extern Area badgeArea;
-const uint16_t BADGE_KEY = 0x0821;  // transparent color of the Badge sprite
+// Things that float over the rest: a round Face and a visible Badge, in drawing order. Each is drawn into every
+// sprite pushed under it (transparent where KEY), so neither flickers nor gets wiped.
+const uint16_t KEY = 0x0821;  // transparent color of floating sprites
+enum { OVERLAY_FACE, OVERLAY_BADGE, OVERLAYS };
+struct Overlay {
+  M5Canvas* canvas;  // nullptr when not shown
+  Area area;
+};
+extern Overlay overlays[OVERLAYS];
 // Areas left stale (a Badge hidden); components over them redraw. seq counts the changes.
 extern Area damage;
 extern uint32_t damageSeq;
 // True once if damage changed since seen and touches a.
 bool damaged(uint32_t& seen, Area a);
-// Pushes c (placed at x, y) to the display, only inside a, leaving out the reserved areas except skip, with a
-// visible Badge drawn in. Resets the display clip rect.
-void push(M5Canvas& c, int x, int y, Area a, int skip = -1);
+// Pushes c (placed at x, y) to the display, only inside a, leaving out the reserved areas except skip, with the
+// overlays drawn in except self. key >= 0: c's pixels of that color are left out. Resets the display clip rect.
+void push(M5Canvas& c, int x, int y, Area a, int skip = -1, int self = -1, int32_t key = -1);
 void push(M5Canvas& c, int x, int y, int skip = -1);
 // Allocates a 16-bit sprite, in PSRAM if there is any. False if out of memory.
 bool makeSprite(M5Canvas& c, int w, int h);

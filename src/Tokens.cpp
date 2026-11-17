@@ -82,8 +82,7 @@ String fit(LovyanGFX& g, const String& text, int w) {
 }
 
 Area reserved[RESERVED] = {};
-M5Canvas* badge = nullptr;
-Area badgeArea = {0, 0, 0, 0};
+Overlay overlays[OVERLAYS] = {};
 Area damage = {0, 0, 0, 0};
 uint32_t damageSeq = 0;
 
@@ -99,12 +98,15 @@ bool damaged(uint32_t& seen, Area a) {
 
 void push(M5Canvas& c, int x, int y, int skip) { push(c, x, y, {x, y, c.width(), c.height()}, skip); }
 
-void push(M5Canvas& c, int x, int y, Area a, int skip) {
+void push(M5Canvas& c, int x, int y, Area a, int skip, int self, int32_t key) {
   int x0 = std::max(a.x, x), y0 = std::max(a.y, y);
   int x1 = std::min(a.x + a.w, x + c.width()), y1 = std::min(a.y + a.h, y + c.height());
   if (x0 >= x1 || y0 >= y1) return;
-  if (badge && overlaps(badgeArea, {x0, y0, x1 - x0, y1 - y0}))
-    badge->pushSprite(&c, badgeArea.x - x, badgeArea.y - y, BADGE_KEY);
+  for (int i = 0; i < OVERLAYS; i++) {
+    const Overlay& o = overlays[i];
+    if (i == self || !o.canvas || !overlaps(o.area, {x0, y0, x1 - x0, y1 - y0})) continue;
+    o.canvas->pushSprite(&c, o.area.x - x, o.area.y - y, KEY);  // its transparent pixels leave c as it is
+  }
   // Horizontal bands cut at the reserved edges; in each band, push the gaps between the reserved spans.
   int cuts[2 + RESERVED * 2], n = 0;
   cuts[n++] = y0;
@@ -134,7 +136,8 @@ void push(M5Canvas& c, int x, int y, Area a, int skip) {
       int end = j < m ? spans[j][0] : x1;
       if (end > gx) {
         d.setClipRect(gx, ya, end - gx, yb - ya);
-        c.pushSprite(&d, x, y);
+        if (key >= 0) c.pushSprite(&d, x, y, (uint16_t)key);
+        else c.pushSprite(&d, x, y);
       }
       if (j < m) gx = std::max(gx, spans[j][1]);
     }

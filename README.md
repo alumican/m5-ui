@@ -31,7 +31,7 @@ UI components for M5Unified on 320x240 displays (Core2, CoreS3). Tested with M5U
 
 ```ini
 lib_deps =
-  https://github.com/alumican/m5-ui.git#v0.7.0
+  https://github.com/alumican/m5-ui.git#v0.8.0
 ```
 
 ## Panel
@@ -215,9 +215,39 @@ void loop() {
 - `setStep(i)` lights item `i` of the steps and the holes or pins it goes into, with their names, blinking; done steps are a little dim, later ones dimmer. `-1`: none.
 - `showAll()`, `showStep()`, `setAngles(yaw, pitch)`. Zooming in by pinch slides toward the step; `metrics.bbFocusPx` sets how close `showStep()` goes.
 - Pins that wires use are always labeled; every pin when zoomed in past `metrics.bbLabelPx`.
-- Full screen: put it in a `m5ui::View` (`begin(0, 0, 320, 240)`, `setContent(&bb)`, `update()`), and pass `view.x()`, `view.y()` to `touch()`.
+- Dragging turns it as if holding the board: right turns it right, down tips it toward you, seen more from above (`metrics.bbTurnPerPx`, `bbTiltPerPx`, degrees per pixel).
+- Full screen with the face floating: see below. `setMargins(left, top, right, bottom)` keeps room free, e.g. under the face; the whole view fits and centers in the rest.
 - Colors: `theme.bbBody`, `bbHole`, `bbGroove`, `bbPlus`, `bbMinus`, `header`, and the Circuit part colors. `m5ui::colorByName()` maps "yellow", "black", ... to `theme.bands`.
 - Cost: it redraws only while something moves or blinks. Each frame draws about 400 holes, the parts and the wires into the content sprite (320 x 140, 88 KB in PSRAM, or 150 KB full screen in a `View`). The Showcase prints frames per second to Serial on this screen.
+
+### Full screen, the face floating
+
+A `View` shows a Content without the title band, e.g. on the whole screen above the subtitle band. A face made with `beginFloating()` sits on a disc at the top left (`metrics.floatX`, `floatY`, `floatSize`; `theme.cushion`, `cushionRim`); outside the disc you see the View. Each draws the other into what it pushes, so the face keeps moving without flicker and neither wipes the other. Subtitle and Badge stay on top.
+
+```cpp
+m5ui::View view;
+m5ui::Face face;
+
+void setup() {
+  M5.begin();
+  view.begin(0, 0, 320, m5ui::metrics.subtitleY);
+  face.beginFloating();
+  bb.setMargins(0, m5ui::metrics.floatY + m5ui::metrics.floatSize, 0, 0);  // the whole view below the face
+  view.setContent(&bb);
+  view.show();
+}
+
+void loop() {
+  M5.update();
+  bb.touch(view.x(), view.y());
+  face.setMouth(level);
+  face.update();
+  view.update();
+  subtitle.update();
+}
+```
+
+When leaving this screen, call `face.hide()` (the View or InfoView under it redraws there) and `view.close()`.
 
 ## Face
 
@@ -243,6 +273,7 @@ void loop() {
 - `onDraw(fn, x, y, w, h)`: `fn(g, w, h)` draws over the face in the sprite before the push, e.g. text that must not flicker. Call `invalidate()` when it changes; `(x, y, w, h)` is the part it draws in (w 0: the whole rect).
 - `show()` draws the whole rect again, e.g. after a popup.
 - Two faces (full and corner) are two `Face` objects, or one `Face` moved with `begin()` again.
+- `setRound(true)`: the background is a disc and the rest of the rect transparent; it floats over InfoView and View (see "Full screen, the face floating"). `beginFloating()` sets it up at the top left; `hide()` takes it away.
 
 ### Layout
 
